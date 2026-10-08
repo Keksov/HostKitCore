@@ -1,0 +1,275 @@
+// panel-window (PW1.1, PW-D3): generic per-panel window state — floating / docked (4 edges) /
+// detached (separate OS window, PW3.x) — with per-field localStorage persistence. Extracted from
+// the fs-browser store's window model so any panel can reuse it. A panel that already persisted
+// its geometry under its own keys passes them via opts.storageKeys (backward compatible, no
+// migration); new panels get '<prefix>panel-<id>-*' keys (prefix from the host, GCY-D22).
+import { reactive, watch } from 'vue'
+
+import { panelKitName } from './panel-kit'
+
+// PL2.2 (panel-layout-tree, PL-D4): the four edge modes collapsed into one 'docked' — WHERE a
+// docked panel sits now lives in the layout tree (use-panel-layout), not in the mode. Persisted
+// legacy edge values are read as 'docked' (the tree side is migrated by usePanelLayout().init).
+export type PanelMode = 'floating' | 'docked' | 'detached'
+
+const ALL_MODES: readonly PanelMode[] = ['floating', 'docked', 'detached']
+
+const LEGACY_EDGE_MODES: readonly string[] = ['left', 'right', 'top', 'bottom']
+
+export interface PanelRect {
+  x: number
+  y: number
+  w: number
+  h: number
+}
+
+// Legacy localStorage key overrides (PW-D3): the file-open panel keeps its
+// existing '…fs-browser-*' keys through these.
+export interface PanelStorageKeys {
+  readonly mode?: string
+  readonly prevMode?: string
+  readonly dockSize?: string
+  readonly floatRect?: string
+  readonly open?: string
+}
+
+export interface PanelWindowOptions {
+  readonly defaultMode?: PanelMode
+  readonly defaultOpen?: boolean
+  readonly defaultFloatRect?: PanelRect
+  readonly defaultDockSize?: number
+  /** Docked-panel size clamp so it never collapses nor eats the whole form. */
+  readonly minDockSize?: number
+  readonly maxDockSize?: number
+  /** Floating-window minimum size enforced by the corner resizer. */
+  readonly minFloatW?: number
+  readonly minFloatH?: number
+  readonly storageKeys?: PanelStorageKeys
+  /**
+   * TD4.2 (TD-D9): the window this state belongs to — empty for the main window, the HOST panel's id
+   * inside a detached child window that runs a dock of its own.
+   *
+   * It namespaces two things at once: the per-window instance below (the same panel may be open in
+   * both windows) and the localStorage keys. Without it a child window would persist its own
+   * geometry over the main window's — the realms differ, storage does not.
+   */
+  readonly hostPanelId?: string
+}
+
+/** TD4.2: the localStorage prefix of one panel's state within one window. */
+export const panelStoragePrefix = (panelId: string, hostPanelId = ''): string =>
+  hostPanelId === '' ? panelKitName(`-${panelId}-`) : panelKitName(`-${panelId}@${hostPanelId}-`)
+
+export interface PanelWindowState {
+  readonly panelId: string
+  open: boolean
+  /** Current mode; 'detached' means the panel lives in a child OS window (PW-D6). */
+  mode: PanelMode
+  /** Last non-detached mode — where the panel returns when the child window closes (PW-D6). */
+  prevMode: PanelMode
+  dockSize: number
+  floatRect: PanelRect
+  /** z-index while floating (PL4.1, PL-D7): pointerdown raises the panel. Not persisted. */
+  floatZ: number
+  readonly minFloatW: number
+  readonly minFloatH: number
+  setMode: (mode: PanelMode) => void
+  setDockSize: (px: number) => void
+  setFloatRect: (rect: Partial<PanelRect>) => void
+  bringToFront: () => void
+}
+
+const DEFAULT_FLOAT: PanelRect = { x: 140, y: 90, w: 900, h: 600 }
+const DEFAULT_DOCK_SIZE = 380
+
+const readMode = (key: string, fallback: PanelMode): PanelMode => {
+  try {
+    const raw = localStorage.getItem(key)
+    if (raw === null) {
+      return fallback
+    }
+    if ((ALL_MODES as readonly string[]).includes(raw)) {
+      return raw as PanelMode
+    }
+    return LEGACY_EDGE_MODES.includes(raw) ? 'docked' : fallback
+  } catch {
+    return fallback
+  }
+}
+
+const readBool = (key: string, fallback: boolean): boolean => {
+  try {
+    const raw = localStorage.getItem(key)
+    return raw === null ? fallback : raw === '1' || raw === 'true'
+  } catch {
+    return fallback
+  }
+}
+
+const readNumber = (key: string, fallback: number): number => {
+  try {
+    const raw = localStorage.getItem(key)
+    const parsed = raw === null ? Number.NaN : Number(raw)
+    return Number.isFinite(parsed) ? parsed : fallback
+  } catch {
+    return fallback
+  }
+}
+
+const readRect = (key: string, fallback: PanelRect): PanelRect => {
+  try {
+    const raw = localStorage.getItem(key)
+    if (raw === null) {
+      return { ...fallback }
+    }
+    const parsed = JSON.parse(raw) as Partial<PanelRect>
+    return {
+      x: typeof parsed.x === 'number' ? parsed.x : fallback.x,
+      y: typeof parsed.y === 'number' ? parsed.y : fallback.y,
+      w: typeof parsed.w === 'number' ? parsed.w : fallback.w,
+      h: typeof parsed.h === 'number' ? parsed.h : fallback.h,
+    }
+  } catch {
+    return { ...fallback }
+  }
+}
+
+const persist = (key: string, value: string): void => {
+  try {
+    localStorage.setItem(key, value)
+  } catch {
+    // Ignore quota / privacy-mode failures — persistence is best-effort.
+  }
+}
+
+// One shared state per panelId within a window: the panel chrome, its host page and the store
+// behind it must all see the same geometry. (The detached child window is a separate app
+// instance with its own cache — it shares only the persisted localStorage, by design PW-D5.)
+const instances = new Map<string, PanelWindowState>()
+
+// PL4.1 (PL-D7): floating z-order — one incremental counter shared by every panel; a raise takes
+// max+1. Capped below Quasar's dialogs (6000) so modals always win; on hitting the cap the whole
+// range is renormalized preserving relative order. Deliberately NOT persisted: after a reload the
+// stacking is simply the creation order.
+const FLOAT_Z_BASE = 3000
+const FLOAT_Z_MAX = 5900
+let nextFloatZ = FLOAT_Z_BASE
+
+export function usePanelWindowState(panelId: string, opts: PanelWindowOptions = {}): PanelWindowState {
+  const instanceKey = opts.hostPanelId === undefined || opts.hostPanelId === ''
+    ? panelId
+    : `${panelId}@${opts.hostPanelId}`
+  const existing = instances.get(instanceKey)
+  if (existing !== undefined) {
+    return existing
+  }
+
+  const prefix = panelStoragePrefix(panelId, opts.hostPanelId ?? '')
+  const keys = {
+    mode: opts.storageKeys?.mode ?? `${prefix}mode`,
+    prevMode: opts.storageKeys?.prevMode ?? `${prefix}prev-mode`,
+    dockSize: opts.storageKeys?.dockSize ?? `${prefix}dock-size`,
+    floatRect: opts.storageKeys?.floatRect ?? `${prefix}float`,
+    open: opts.storageKeys?.open ?? `${prefix}open`,
+  }
+
+  const defaultMode = opts.defaultMode ?? 'floating'
+  const defaultFloat = opts.defaultFloatRect ?? DEFAULT_FLOAT
+  const minDock = opts.minDockSize ?? 240
+  const maxDock = opts.maxDockSize ?? 900
+
+  const mode = readMode(keys.mode, defaultMode)
+  const state: PanelWindowState = reactive({
+    panelId,
+    open: readBool(keys.open, opts.defaultOpen ?? false),
+    mode,
+    // A persisted 'detached' mode must never leave prevMode detached too (PW-D6 fallback path).
+    prevMode: readMode(keys.prevMode, mode !== 'detached' ? mode : 'floating'),
+    dockSize: readNumber(keys.dockSize, opts.defaultDockSize ?? DEFAULT_DOCK_SIZE),
+    floatRect: readRect(keys.floatRect, defaultFloat),
+    floatZ: (nextFloatZ += 1),
+    minFloatW: opts.minFloatW ?? 460,
+    minFloatH: opts.minFloatH ?? 320,
+    setMode: (next: PanelMode): void => {
+      if (next !== 'detached') {
+        state.prevMode = next
+      }
+      state.mode = next
+    },
+    setDockSize: (px: number): void => {
+      state.dockSize = Math.max(minDock, Math.min(px, maxDock))
+    },
+    setFloatRect: (rect: Partial<PanelRect>): void => {
+      state.floatRect = { ...state.floatRect, ...rect }
+    },
+    bringToFront: (): void => {
+      if (state.floatZ === nextFloatZ) {
+        return // already on top
+      }
+      if (nextFloatZ >= FLOAT_Z_MAX) {
+        const ordered = [...instances.values()].sort((a, b) => a.floatZ - b.floatZ)
+        nextFloatZ = FLOAT_Z_BASE
+        for (const other of ordered) {
+          other.floatZ = (nextFloatZ += 1)
+        }
+      }
+      state.floatZ = (nextFloatZ += 1)
+    },
+  })
+
+  watch(() => state.mode, (v) => persist(keys.mode, v))
+  watch(() => state.prevMode, (v) => persist(keys.prevMode, v))
+  watch(() => state.dockSize, (v) => persist(keys.dockSize, String(Math.round(v))))
+  watch(() => state.floatRect, (v) => persist(keys.floatRect, JSON.stringify(v)), { deep: true })
+  watch(() => state.open, (v) => persist(keys.open, v ? '1' : '0'))
+
+  instances.set(instanceKey, state)
+  return state
+}
+
+// ---- Detached child-window geometry (PW4.1, PW-D7) --------------------------------------------
+// The detached OS window's on-screen rectangle in CONTENT coordinates: (x, y) = window.screenX/
+// screenY and (w, h) = innerWidth/innerHeight. Distinct from floatRect (an in-page floating rect
+// in viewport space) — this is a real OS window position. The child window (a separate app
+// instance) writes it to the SHARED localStorage; the parent reads it to size/place the next
+// window.open. The key always uses the default scheme so both windows agree without the child
+// having to know the panel's storageKeys.
+export interface PanelScreenRect {
+  x: number
+  y: number
+  w: number
+  h: number
+}
+
+export const detachedRectKey = (panelId: string): string => panelKitName(`-${panelId}-detached-rect`)
+
+/**
+ * The window.open target name of a panel's detached window: a still-open child is reused/focused,
+ * never duplicated. GCY1.3: from the host's prefix like every other panel name (MindWave:
+ * 'mindwave-panel-<id>'; before GCY1.3 a literal 'mw-panel-<id>' — internal, nobody else reads it).
+ */
+export const detachedWindowName = (panelId: string): string => panelKitName(`-${panelId}`)
+
+export function readPanelScreenRect(key: string): PanelScreenRect | null {
+  try {
+    const raw = localStorage.getItem(key)
+    if (raw === null) {
+      return null
+    }
+    const parsed = JSON.parse(raw) as Partial<PanelScreenRect>
+    if (
+      typeof parsed.x === 'number' && typeof parsed.y === 'number' &&
+      typeof parsed.w === 'number' && typeof parsed.h === 'number' &&
+      parsed.w > 0 && parsed.h > 0
+    ) {
+      return { x: parsed.x, y: parsed.y, w: parsed.w, h: parsed.h }
+    }
+    return null
+  } catch {
+    return null
+  }
+}
+
+export function writePanelScreenRect(key: string, rect: PanelScreenRect): void {
+  persist(key, JSON.stringify(rect))
+}

@@ -1,0 +1,12 @@
+{
+  "panel": {
+    "dockMenu": "Window position",
+    "dockFloat": "Floating window",
+    "tracksArea": "Tracks",
+    "resetLayout": "Reset layout",
+    "detach": "Separate window",
+    "detachBlocked": "Couldn't open the separate window (blocked by the browser)",
+    "close": "Close",
+    "unknown": "Unknown panel"
+  }
+}

@@ -18,5 +18,13 @@ decisions GCY-D2, GCY-D29, GCY-D17 in `MindWaveCore/docs/gnauralcity/gnauralcity
 - the server skeleton: start-up, routing by module, admin endpoints, shutdown chain, HTTP and
   loopback utilities (GCY1.7).
 
-Until those steps land this repository holds no code: each part arrives by its own move step, with
-its tests and its verify steps.
+Each part arrives by its own move step, with its tests and its verify steps. Landed so far:
+
+- GCY1.3 — `ui/panel` (`@panel`, with its `panel.*` locales in `ui/panel/locales`) and `ui/tooltip`
+  (`@tooltip`). The panel framework names its localStorage keys, bridge channels and detached
+  windows from a prefix the HOST gives it — `configurePanelKit({ keyPrefix })` (`ui/panel/panel-kit.ts`)
+  before first use; there is no default, an unconfigured call throws (GCY-D22).
+
+Tests: `bun test` in this directory, with no path (verify step `hostkit-tests` in
+`MindWaveCore/uitest/src/verify-steps.ts`). They need `bun install` in `ui/` once (vue, as in
+`GnauralCore/ui`).
