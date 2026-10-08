@@ -1,0 +1,34 @@
+{
+  "common": {
+    "bunConnected": "Bun connected",
+    "bunConnecting": "Connecting to Bun...",
+    "bunDisconnected": "Bun disconnected",
+    "bunActionsTitle": "Bun Actions",
+    "bunActionsHint": "Ctrl+Click opens this menu. Select actions to run and press OK.",
+    "bunActionBuildUi": "Build UI",
+    "bunActionRestartBun": "Restart bun",
+    "bunActionBuildUiCompleted": "UI build completed.",
+    "bunActionRestartBunScheduled": "Bun restart scheduled.",
+    "bunActionStateIdle": "Idle",
+    "bunActionStatePending": "Queued",
+    "bunActionStateRunning": "Running",
+    "bunActionStateCompleted": "Completed",
+    "bunActionStateScheduled": "Scheduled",
+    "bunActionStateFailed": "Failed",
+    "bunActionStateSkipped": "Skipped",
+    "bunActionsStatusLoading": "Checking Bun action availability...",
+    "bunActionsStatusFailed": "Failed to load Bun action status.",
+    "bunActionsProgressTitle": "Progress",
+    "bunActionsApplied": "Selected actions completed.",
+    "bunActionsRestartScheduled": "Selected actions completed. Bun restart scheduled.",
+    "bunActionsFailed": "Failed to run selected actions.",
+    "okAction": "OK",
+    "closeAction": "Close",
+    "connectionLost": "Connection to server lost"
+  },
+  "language": {
+    "label": "Language",
+    "en": "English",
+    "ru": "Русский"
+  }
+}

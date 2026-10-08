@@ -11,20 +11,17 @@
 //
 // Every name is built by panelKitName() and nowhere else, and only when it is needed — never at
 // module top level: modules are evaluated before the host's boot code runs.
+//
+// GCY1.5: the prefix is no longer the panel framework's own state — it is the shell's one host
+// setting (`../app/host-keys.ts`), which the language choice uses too. configurePanelKit() stays as a
+// thin entry into that same setting (no second state); configureHostKeys() sets the very same value.
+import { configureHostKeys, hostKey, isHostKeysConfigured, type HostKeysOptions } from '../app/host-keys'
 
-export interface PanelKitOptions {
-  /** Prepended to every storage key, channel name and window name, e.g. 'mindwave-'. */
-  readonly keyPrefix: string
-}
-
-let keyPrefix: string | null = null
+export type PanelKitOptions = HostKeysOptions
 
 /** Called by the host once, before anything uses the panel framework (MindWave: a boot file). */
 export function configurePanelKit(options: PanelKitOptions): void {
-  if (typeof options.keyPrefix !== 'string' || options.keyPrefix === '') {
-    throw new Error('configurePanelKit: keyPrefix must be a non-empty string (e.g. "mindwave-")')
-  }
-  keyPrefix = options.keyPrefix
+  configureHostKeys(options)
 }
 
 /**
@@ -32,11 +29,12 @@ export function configurePanelKit(options: PanelKitOptions): void {
  * panelKitName('-layout') === 'mindwave-panel-layout'.
  */
 export function panelKitName(rest: string): string {
-  if (keyPrefix === null) {
+  if (!isHostKeysConfigured()) {
     throw new Error(
       'panel framework (@panel) used before configurePanelKit({ keyPrefix }) — the host must call it ' +
-        'before any panel state, layout or detached window is created; there is no default prefix',
+        '(or configureHostKeys, the same setting) before any panel state, layout or detached window is ' +
+        'created; there is no default prefix',
     )
   }
-  return `${keyPrefix}panel${rest}`
+  return hostKey(`panel${rest}`)
 }

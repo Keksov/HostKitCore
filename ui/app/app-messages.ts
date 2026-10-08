@@ -7,6 +7,8 @@
 // заголовком окна, пока панель не найдена.
 import panelEn from '../panel/locales/en.json'
 import panelRu from '../panel/locales/ru.json'
+import shellEn from '../shell/locales/en.json'
+import shellRu from '../shell/locales/ru.json'
 import type { CoreModuleDescriptor, LocaleMessages, MessageTree } from './module-registry'
 
 type MutableMessageTree = Record<string, unknown>
@@ -42,18 +44,27 @@ function mergeLocaleMessages(...bundles: readonly LocaleMessages[]): LocaleMessa
   return result as LocaleMessages
 }
 
-/** Сообщения самой оболочки: подписи каркаса панелей `panel.*` (GCY1.3). */
-const shellMessages: LocaleMessages = { en: panelEn, ru: panelRu }
+/**
+ * Сообщения самой оболочки, в порядке слияния: сервисы оболочки (GCY1.5 — `common.*` индикатора и
+ * плашки связи, диалога «Bun-действия», кнопок OK/Закрыть; `language.*`), затем подписи каркаса
+ * панелей `panel.*` (GCY1.3). Ключи у них не пересекаются ни друг с другом, ни с хостом.
+ */
+const shellMessages: readonly LocaleMessages[] = [
+  { en: shellEn, ru: shellRu },
+  { en: panelEn, ru: panelRu },
+]
 
 /**
  * Дерево сообщений приложения. Порядок — хост, оболочка, модули по порядку списка хоста; следующий
- * перекрывает предыдущий по листьям, поддеревья сливаются. Оболочка — сразу за хостом: до GCY1.3
- * `panel` был последней веткой локалей хоста, поэтому итоговое дерево сохраняет прежний порядок
- * ключей, а модули по-прежнему ложатся поверх.
+ * перекрывает предыдущий по листьям, поддеревья сливаются. Оболочка — сразу за хостом, и в ней
+ * сервисы раньше панелей: до GCY1.3/GCY1.5 `language` и `panel` были последними ветками локалей хоста
+ * (в этом порядке), поэтому порядок ВЕРХНИХ веток итогового дерева прежний, а модули по-прежнему
+ * ложатся поверх. Внутри `common` ключи оболочки идут после оставшихся у хоста (слияние дописывает
+ * новые ключи в конец ветки) — vue-i18n ищет подпись по пути, порядок ключей ему безразличен.
  */
 export function assembleAppMessages(
   hostMessages: LocaleMessages,
   modules: readonly CoreModuleDescriptor[],
 ): LocaleMessages {
-  return mergeLocaleMessages(hostMessages, shellMessages, ...modules.map((module) => module.messages))
+  return mergeLocaleMessages(hostMessages, ...shellMessages, ...modules.map((module) => module.messages))
 }

@@ -33,10 +33,28 @@ Each part arrives by its own move step, with its tests and its verify steps. Lan
     `ui_echo` liveness echo, reconnect and the `/ws/ui` address stay here.
   - `ui/app/module-registry.ts` — the module contract (`CoreModuleDescriptor`) and `assembleModules`
     (routes, settings tabs, panels in the host's module order); `ui/app/app-messages.ts` —
-    `assembleAppMessages` (host, then the shell's `panel.*`, then modules). A host's locales must
+    `assembleAppMessages` (host, then the shell's captions, then modules). A host's locales must
     carry `app.title` (the product name).
   - `ui/app/PanelHostPage.vue` + `panelHostRoute(panels)` (`ui/app/panel-host-route.ts`) — the
     detached-panel page at `#/panel/<id>`; the host hands it its panels as a route prop.
+- GCY1.5 — the shell services and the bare layout (`@hostkit/shell/...`, `ui/shell`):
+  - `ui/app/host-keys.ts` — the shell's ONE host setting, the key prefix: `configureHostKeys({ keyPrefix })`
+    in the host's first boot file, `hostKey(rest)` builds every name. The panel framework builds its
+    names through it (`configurePanelKit` is now a thin entry into the same setting), and so does the
+    language key (`<prefix>locale`, `ui/shell/language.ts` — MindWave's stays `mindwave-locale`).
+    No default; an unconfigured call throws.
+  - `ui/shell/ShellLayout.vue` — the bare layout: `q-layout` (prop `view`) + an optional `header` slot
+    (the host's whole `q-header`) + `q-page-container` with `router-view`. It mounts the shell services
+    every host gets: the "Bun actions" dialog (`ShellBunActionsDialog.vue`) and the connection-lost
+    banner (a Quasar notify on top of the page, `connection-lost-notify.ts`; one watcher of the
+    connection state drives both the banner and the page reload after a Bun restart, as before the move).
+  - `ui/shell/ShellConnectionIndicator.vue` (Bun connection icon; Ctrl+click opens the dialog through
+    `openBunActionsDialog()`, `ui/shell/bun-actions.ts`) and `ui/shell/ShellLanguageSelect.vue`.
+  - `ui/shell/admin-api.ts` — the client of `/api/admin/bun-actions` with the built-in actions `build-ui`
+    and `restart-bun`. A host adds its own actions with `bunActionExtensions` on `ShellLayout` (key,
+    label, "completed" text, function, and the built-in it runs before); MindWave adds `restart-exe`.
+  - `ui/shell/locales` — the services' `common.*` and `language.*` captions; `assembleAppMessages`
+    merges host, then shell services, then `panel.*`, then modules.
 
 Tests: `bun test` in this directory, with no path (verify step `hostkit-tests` in
 `MindWaveCore/uitest/src/verify-steps.ts`). They need `bun install` in `ui/` once (vue, as in

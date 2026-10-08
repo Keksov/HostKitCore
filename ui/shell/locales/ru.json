@@ -1,0 +1,34 @@
+{
+  "common": {
+    "bunConnected": "Bun подключен",
+    "bunConnecting": "Подключение к Bun...",
+    "bunDisconnected": "Bun отключен",
+    "bunActionsTitle": "Действия Bun",
+    "bunActionsHint": "Ctrl+Click открывает это меню. Выберите действия и нажмите OK.",
+    "bunActionBuildUi": "Build UI",
+    "bunActionRestartBun": "Restart bun",
+    "bunActionBuildUiCompleted": "Сборка UI завершена.",
+    "bunActionRestartBunScheduled": "Перезапуск Bun запланирован.",
+    "bunActionStateIdle": "Ожидание",
+    "bunActionStatePending": "В очереди",
+    "bunActionStateRunning": "Выполняется",
+    "bunActionStateCompleted": "Готово",
+    "bunActionStateScheduled": "Запланировано",
+    "bunActionStateFailed": "Ошибка",
+    "bunActionStateSkipped": "Пропущено",
+    "bunActionsStatusLoading": "Проверка доступности действий Bun...",
+    "bunActionsStatusFailed": "Не удалось загрузить состояние действий Bun.",
+    "bunActionsProgressTitle": "Прогресс",
+    "bunActionsApplied": "Выбранные действия выполнены.",
+    "bunActionsRestartScheduled": "Выбранные действия выполнены. Перезапуск Bun запланирован.",
+    "bunActionsFailed": "Не удалось выполнить выбранные действия.",
+    "okAction": "OK",
+    "closeAction": "Закрыть",
+    "connectionLost": "Связь с сервером потеряна"
+  },
+  "language": {
+    "label": "Язык",
+    "en": "English",
+    "ru": "Русский"
+  }
+}
