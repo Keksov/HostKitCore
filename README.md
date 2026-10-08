@@ -24,6 +24,19 @@ Each part arrives by its own move step, with its tests and its verify steps. Lan
   (`@tooltip`). The panel framework names its localStorage keys, bridge channels and detached
   windows from a prefix the HOST gives it — `configurePanelKit({ keyPrefix })` (`ui/panel/panel-kit.ts`)
   before first use; there is no default, an unconfigured call throws (GCY-D22).
+- GCY1.4 — behind the `@hostkit` alias (target: `ui/`):
+  - `ui/ws/ws.ts` — the ws transport, one per app (`wsService`). It knows no module protocol: a module
+    registers, when its plugin is installed, its event handlers (`registerHandler`; dispatch runs them
+    in registration order and stops at the first `true`, so the host's plugin install order is the
+    dispatch order), the message types that arm the liveness clock (`registerAnsweredTypes`) and the
+    type prefixes multicast to subscribers past dispatch (`registerPrefixChannel`). The shell's own
+    `ui_echo` liveness echo, reconnect and the `/ws/ui` address stay here.
+  - `ui/app/module-registry.ts` — the module contract (`CoreModuleDescriptor`) and `assembleModules`
+    (routes, settings tabs, panels in the host's module order); `ui/app/app-messages.ts` —
+    `assembleAppMessages` (host, then the shell's `panel.*`, then modules). A host's locales must
+    carry `app.title` (the product name).
+  - `ui/app/PanelHostPage.vue` + `panelHostRoute(panels)` (`ui/app/panel-host-route.ts`) — the
+    detached-panel page at `#/panel/<id>`; the host hands it its panels as a route prop.
 
 Tests: `bun test` in this directory, with no path (verify step `hostkit-tests` in
 `MindWaveCore/uitest/src/verify-steps.ts`). They need `bun install` in `ui/` once (vue, as in
