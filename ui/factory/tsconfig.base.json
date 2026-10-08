@@ -1,0 +1,19 @@
+// gnauralcity GCY1.6 (GCY-D17): the compiler options every host's UI program shares. A host does not
+// extend this file directly: its tsconfig.json extends its GENERATED tsconfig.hostkit.json (the whole
+// `paths` with the pin — see host-tsconfig.ts for why `paths` cannot live here), which extends this.
+// No `paths`, `include` or `exclude` here: they are the host's.
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "Preserve",
+    "moduleResolution": "Bundler",
+    "strict": true,
+    "ignoreDeprecations": "5.0",
+    "jsx": "preserve",
+    "lib": ["ES2022", "DOM"],
+    "types": ["@quasar/app-vite"],
+    "noEmit": true,
+    "isolatedModules": true,
+    "skipLibCheck": true
+  }
+}

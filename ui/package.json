@@ -9,7 +9,7 @@
     "vue-i18n": "^10.0",
     "vue-router": "^4.5"
   },
-  "//devDependencies": "GCY1.3 (owner 2026-10-08, «как в GnauralCore/ui»): vue so that `bun test` in HostKitCore can run the panel tests that import it (use-panel-layout.test.ts, panel-kit.test.ts) — bun resolves a bare import from the importing file's directory. The host pins vue to ITS node_modules in quasar.config.ts and tsconfig.json, so the app still bundles exactly one copy.",
+  "//devDependencies": "GCY1.3 (owner 2026-10-08, «как в GnauralCore/ui»): vue so that `bun test` in HostKitCore can run the panel tests that import it (use-panel-layout.test.ts, panel-kit.test.ts) — bun resolves a bare import from the importing file's directory. The host pins vue to ITS node_modules (GCY1.6: through the host UI factory, ui/factory — vite aliases and the generated tsconfig.hostkit.json), so the app still bundles exactly one copy.",
   "devDependencies": {
     "vue": "^3.5"
   }

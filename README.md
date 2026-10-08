@@ -55,6 +55,28 @@ Each part arrives by its own move step, with its tests and its verify steps. Lan
     label, "completed" text, function, and the built-in it runs before); MindWave adds `restart-exe`.
   - `ui/shell/locales` — the services' `common.*` and `language.*` captions; `assembleAppMessages`
     merges host, then shell services, then `panel.*`, then modules.
+- GCY1.6 — the host UI factory (`ui/factory`, build-time node code; not behind an alias, a host imports
+  it by path from its `quasar.config.ts`). A host's config is `export const hostUi: HostUiConfig = {...}`
+  (`ui/factory/host-ui.ts`: its ui/ and the HostKitCore dir, boot, css, extras, distDir, its own aliases
+  for the bundler and for tsconfig, its modules' third-party libraries `modulePins`, manual chunks,
+  default backend port, warn build switch and marker, quasar `framework`) plus
+  `export default hostQuasarConfig(hostUi)` (`ui/factory/quasar-config.ts`). The factory adds what every
+  host shares: the pin of ONE copy of the shell's packages (`SHELL_PINS` in `ui/factory/pins.ts`: vue,
+  pinia, vue-i18n, vue-router, quasar) and of `modulePins`, the shell's aliases `@panel`, `@tooltip`,
+  `@hostkit`, the hash router, the es2022 target, the dev proxy of `/api` and `/ws/ui` (PORT, then
+  SERVER_PORT, then the host's default), the warn build, the manual chunks.
+  - The pin's second half is tsconfig `paths`. A `paths` in an extending tsconfig REPLACES the base's,
+    so the whole block is generated into the host: `<host ui>/tsconfig.hostkit.json` (extends
+    `ui/factory/tsconfig.base.json` — the shared compiler options), which the host's `tsconfig.json`
+    extends, keeping its own include/exclude. Regenerate after changing the pin or the host's aliases:
+    `bun ../../HostKitCore/ui/factory/write-host-tsconfig.ts .` from the host's ui/ (the host directory
+    is an argument — HostKitCore knows no host). Whether each registered host's file is current is a
+    workspace check: `validate-qa.js` (workspace root) renders it for every host of `hosts.json` and
+    reddens while it is stale. `ui/factory/factory.test.ts` tests the factory on a host given in the
+    test (nothing outside HostKitCore is read): the bundler's aliases and the `paths` send each pinned
+    package to the same place.
+  - The host excludes `ui/factory/**` from its browser program; the factory is type-checked through its
+    test in the host's test program (bun's types — the node environment it runs in).
 
 Tests: `bun test` in this directory, with no path (verify step `hostkit-tests` in
 `MindWaveCore/uitest/src/verify-steps.ts`). They need `bun install` in `ui/` once (vue, as in
