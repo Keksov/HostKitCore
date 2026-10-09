@@ -77,7 +77,41 @@ Each part arrives by its own move step, with its tests and its verify steps. Lan
     package to the same place.
   - The host excludes `ui/factory/**` from its browser program; the factory is type-checked through its
     test in the host's test program (bun's types — the node environment it runs in).
+- GCY1.7 — the server skeleton (`server/`, plain bun code, imported by path from the host's entry point;
+  no package of its own):
+  - `server/start.ts` — `startHostServer({ port, idleTimeout, publicDir, admin, modules })`: `Bun.serve` on
+    127.0.0.1; `fetch` = `/ws/ui` upgrade (socket data `{ kind: "ui", clientIp }`) → the admin endpoints →
+    each module's HTTP handler in list order (`null` = not mine) → static files from `publicDir`
+    (`server/static.ts`); ws = subscribe to topic `"ui"`, then every module's `open`/`message`/`close`
+    (a message reaches EVERY module as text; each filters its own types); the shutdown chain
+    (`server/shutdown.ts`): SIGINT/SIGTERM → each module's `dispose` in list order → `exit(0)`,
+    `beforeExit` → dispose without exit, idempotent. Returns the `Bun.Server` (modules publish into it).
+  - `server/admin.ts` — `/api/admin/bun-actions` (status, `build-ui`, `restart-bun`, POST with a list; the
+    order is build-ui → host actions → restart-bun). A host adds its own actions
+    (`AdminBunActionExtension`: body key, route, run, error status) — MindWave's `restart-exe`.
+    `restart-bun` re-runs `<bun> run <entry>` detached in the host's directory and exits through the
+    shutdown chain; it is blocked under `bun --watch` and under the dev watcher (`server/watch-mode.ts`,
+    `HK_DEV_WATCHER=1`).
+  - `server/http.ts` (`jsonResponse`, `errorResponse` → `{ error }`, `parseJsonBody` → "Invalid JSON body"),
+    `server/loopback.ts` (`ensureLoopbackNoProxy`, `isLoopbackAddress`), `server/port.ts`
+    (`resolveServerPort(default)`: `--port=N`, then `PORT`, then the host's default).
+  - `server/dev-watch.ts` — the dev watcher (GCY-D30; `bun --watch` on Windows only sees files under the
+    process cwd, GCY1.1). The host's `dev` script runs
+    `bun <HostKitCore>/server/dev-watch.ts --entry server.ts --default-port <n> [--watch <dir>]…` from its
+    server directory. It spawns `<bun> run <entry>` as a plain child (`HK_DEV_WATCHER=1`, stdio
+    inherited), watches the entry's import graph (`server/import-graph.ts`: local imports, any repo,
+    recomputed on every start; checked against Bun's bundler in its test) plus `.ts` under the `--watch`
+    dirs (minus `node_modules`, `var`, `tmp`, `public`, `vendor`, `build`, dot dirs and tests), and on a
+    change kills the child's tree by PID (`taskkill /T /F` — engine, BodyMonitor.exe, worker), waits for
+    the exit and the port, and starts it again; a child that exits by itself waits for the next change.
+    Bun's `fs.watch` on Windows is unreliable (measured on 1.3.11 and 1.3.13: a recursive watch names the
+    directory instead of the file; two writes into one directory within ~1 ms deliver one event), so
+    every directory is watched non-recursively, an event of ANY name only arms a check 150 ms later, and
+    the check compares file signatures (mtime + size) against a snapshot taken when the child started.
 
 Tests: `bun test` in this directory, with no path (verify step `hostkit-tests` in
 `MindWaveCore/uitest/src/verify-steps.ts`). They need `bun install` in `ui/` once (vue, as in
-`GnauralCore/ui`).
+`GnauralCore/ui`). The server tests open no HTTP connection (the step runs without `NO_PROXY`, and Bun
+reads the proxy once at start, F-0012): the routing is tested on a fake `Bun.Server`, the real
+`Bun.serve` by the step's live smoke. The server code is type-checked in `MindWaveCore/server`'s program
+(its `tsconfig.json` includes `../../HostKitCore/server/**/*.ts`).
