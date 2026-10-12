@@ -6,7 +6,8 @@
 // and gets what every host shares: the pin of one copy of the shell's packages and of its modules'
 // libraries (`pins.ts`), the shell's aliases, the hash router, the build target, the dev proxy to its
 // backend, the warn build and the manual chunks — all moved here from MindWave's quasar.config.ts
-// without changing what the CLI builds (GCY-D12).
+// without changing what the CLI builds (GCY-D12). GCY2.1: and the app files every host has the same —
+// the root component and the pinia store (`SHELL_SOURCE_FILES`, quasar's `sourceFiles`).
 //
 // Loaded by the quasar CLI from the host's config: esbuild bundles this file into a temporary file next
 // to the host's quasar.config.ts (relative imports are bundled, packages stay external) — keep it free
@@ -14,7 +15,7 @@
 
 import { join } from 'node:path'
 
-import { type HostUiConfig, hostPins, mergeDistinct, shellAliasTargets } from './host-ui'
+import { type HostUiConfig, hostPins, hostSourceFiles, mergeDistinct, shellAliasTargets } from './host-ui'
 import { pinnedViteAliases, type ViteAliasEntry } from './pins'
 
 /** The parts of the Vite config `extendViteConf` touches (quasar hands over the whole config). */
@@ -43,6 +44,10 @@ export function hostQuasarConfig(host: HostUiConfig) {
 
   return function (/* ctx */) {
     return {
+      // GCY2.1: the root component and the pinia store are the shell's (`SHELL_SOURCE_FILES`); the
+      // router stays quasar's default, the host's `src/router/index.ts`.
+      sourceFiles: hostSourceFiles(host),
+
       boot: [...host.boot],
 
       css: [...host.css],

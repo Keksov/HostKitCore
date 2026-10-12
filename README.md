@@ -1,7 +1,7 @@
 # HostKitCore
 
-Shared shell and build kit for the hosts of the KKMindWave workspace (MindWave today, Gnauralcity
-next). Layering: hosts -> modules (`GnauralCore`, `BodyMonitorCore`) -> HostKitCore. HostKitCore
+Shared shell and build kit for the hosts of the KKMindWave workspace (MindWave and, since GCY2.1,
+Gnauralcity). Layering: hosts -> modules (`GnauralCore`, `BodyMonitorCore`) -> HostKitCore. HostKitCore
 knows no product: it never imports a host or a module, and the list of hosts lives in the
 workspace registry `hosts.json` (workspace root), not here.
 
@@ -108,6 +108,28 @@ Each part arrives by its own move step, with its tests and its verify steps. Lan
     directory instead of the file; two writes into one directory within ~1 ms deliver one event), so
     every directory is watched non-recursively, an event of ANY name only arms a check 150 ms later, and
     the check compares file signatures (mtime + size) against a snapshot taken when the child started.
+
+- GCY2.1 — what every host's app has the same, and the host's installation (Gnauralcity, the second host,
+  is built from these and nothing else of its own but configuration):
+  - `ui/app/HostApp.vue` (the root component: `router-view`, the ws transport started on mount) and
+    `ui/app/host-store.ts` (the pinia store) — the factory hands them to quasar as its `sourceFiles`
+    (`SHELL_SOURCE_FILES` in `ui/factory/host-ui.ts`, relative to the host's ui/), so a host writes no
+    `src/App.vue` or `src/stores/index.ts`; the host's router stays quasar's default, `src/router/index.ts`
+    (quasar itself requires only `index.html` in the host's ui/);
+  - `ui/app/host-router.ts` — `hostRouter(routes)` (hash history, scroll to top: what the host's
+    `src/router/index.ts` exports) and `moduleRouteRecords(moduleRoutes)` (the modules' routes as
+    vue-router records); `ui/app/host-i18n.ts` — `installHostI18n(app, messages)` (the saved language under
+    `<prefix>locale`, else Russian; English as the fallback) for the host's boot file;
+  - `scripts/init-host.bat <host server dir>` — the host's installation: bun.exe in its server dir (its
+    own; else a copy of a neighbour host's `<workspace>\<repo>\server\bun.exe` — one Bun version per
+    workspace; else the latest release, through VendorsCore's cached download), then `bun install` in the
+    server dir and in `..\ui`. The workspace bootstrap runs it for every host; MindWave's
+    `server/init-dev.bat` is a thin wrapper;
+  - `scripts/sync-appcore-launcher.ps1 -ServerDir <host server dir> [-AppCoreBin <path>]` — copies
+    AppCore's `AppMain.exe` + `libwebview.dll` into the host's server dir and stamps its `AppCore.ico` into
+    the exe (AppCore, `c:\projects\Games\AppCore`, is only read);
+  - `templates/app.cfg`, `templates/AppCore.ini` — samples of a host's AppCore launch config and branding
+    (placeholders `{{PRODUCT}}`, `{{SERVER_PORT}}`, `{{DEV_PORT}}`), written from MindWave's.
 
 Tests: `bun test` in this directory, with no path (verify step `hostkit-tests` in
 `MindWaveCore/uitest/src/verify-steps.ts`). They need `bun install` in `ui/` once (vue, as in

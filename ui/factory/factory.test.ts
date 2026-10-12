@@ -17,6 +17,7 @@
 // Run (part of the verify procedure, see AGENTS.md):
 //   cd HostKitCore && bun test
 import { describe, expect, test } from 'bun:test'
+import { existsSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 
 import { BASE_TSCONFIG, hostTsPaths, renderHostTsconfig } from './host-tsconfig'
@@ -155,6 +156,23 @@ describe('a host given here (no registry, no host files — GCY-D1: HostKitCore 
       expect(resolve(host.uiDir, twin.replace(/\/\*$/, ''))).toBe(resolve(alias[name] ?? '?'))
     }
     expect(alias['@protocol']).toBe(join(WS, 'Shared', 'protocol.ts'))
+  })
+
+  test("GCY2.1: the root component and the store are the shell's, named relative to the host's ui/", () => {
+    const config = hostQuasarConfig(host)()
+    expect(config.sourceFiles).toEqual({
+      rootComponent: '../../HostKitCore/ui/app/HostApp.vue',
+      store: '../../HostKitCore/ui/app/host-store',
+    })
+    // Quasar imports them as `app/<path>` and looks for the store against the host's ui/: both land in
+    // HostKitCore — the files next to this test's directory (read inside HostKitCore only).
+    const kitUi = resolve(import.meta.dir, '..')
+    expect(existsSync(join(kitUi, 'app', 'HostApp.vue'))).toBe(true)
+    expect(existsSync(join(kitUi, 'app', 'host-store.ts'))).toBe(true)
+    expect(resolve(host.uiDir, config.sourceFiles.rootComponent)).toBe(join(WS, 'HostKitCore', 'ui', 'app', 'HostApp.vue'))
+    expect(resolve(host.uiDir, config.sourceFiles.store)).toBe(join(WS, 'HostKitCore', 'ui', 'app', 'host-store'))
+    // The router stays quasar's default: the host's own src/router/index.ts (its routes).
+    expect('router' in config.sourceFiles).toBe(false)
   })
 })
 

@@ -5,7 +5,7 @@
 // (GCY-D19): the module list, the brand, the libraries of the modules and the host's own additions
 // all arrive in this object.
 
-import { join } from 'node:path'
+import { join, relative } from 'node:path'
 
 import { SHELL_PINS, type PinnedPackage } from './pins'
 
@@ -81,6 +81,28 @@ export const SHELL_ALIASES: Readonly<Record<string, string>> = {
   // and app assembly, the detached-panel page and route (`@hostkit/app/...`), the shell services.
   '@hostkit': 'ui',
 }
+
+/**
+ * GCY2.1 (GCY-D17): the app files every host has the same, relative to the HostKitCore checkout — the
+ * root component and the pinia store. Quasar takes them from here (its `sourceFiles`), so a host does not
+ * write them: until GCY2.1 they were MindWave's `src/App.vue` and `src/stores/index.ts`, moved without
+ * a change. Quasar keeps its defaults for the rest — the host's own `src/router/index.ts` (its routes) —
+ * and requires `index.html` in the host's ui/ whatever is configured.
+ */
+export const SHELL_SOURCE_FILES = {
+  rootComponent: 'ui/app/HostApp.vue',
+  store: 'ui/app/host-store',
+} as const
+
+/**
+ * Quasar's `sourceFiles` for a host: the shell's files, relative to the host's ui/ with forward slashes —
+ * quasar imports them as `app/<path>` (`app` is its alias of the host's ui/) and looks for the store by
+ * resolving the same path against the host's ui/.
+ */
+export const hostSourceFiles = (host: HostUiConfig): Record<keyof typeof SHELL_SOURCE_FILES, string> => ({
+  rootComponent: relative(host.uiDir, join(host.hostKitDir, ...SHELL_SOURCE_FILES.rootComponent.split('/'))).replace(/\\/g, '/'),
+  store: relative(host.uiDir, join(host.hostKitDir, ...SHELL_SOURCE_FILES.store.split('/'))).replace(/\\/g, '/'),
+})
 
 /** The shell's aliases with absolute targets, for the bundler. */
 export const shellAliasTargets = (hostKitDir: string): Record<string, string> =>
