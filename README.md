@@ -83,7 +83,9 @@ Each part arrives by its own move step, with its tests and its verify steps. Lan
     127.0.0.1; `fetch` = `/ws/ui` upgrade (socket data `{ kind: "ui", clientIp }`) → the admin endpoints →
     each module's HTTP handler in list order (`null` = not mine) → static files from `publicDir`
     (`server/static.ts`); ws = subscribe to topic `"ui"`, then every module's `open`/`message`/`close`
-    (a message reaches EVERY module as text; each filters its own types); the shutdown chain
+    (a message reaches EVERY module as text; each filters its own types) — except the shell's liveness
+    echo (`ui_echo` with a non-empty `requestId`), which the skeleton answers itself with `ui_echo_ack` to
+    the same socket and hands to no module (GCY2.2, `server/ui-echo.ts`); the shutdown chain
     (`server/shutdown.ts`): SIGINT/SIGTERM → each module's `dispose` in list order → `exit(0)`,
     `beforeExit` → dispose without exit, idempotent. Returns the `Bun.Server` (modules publish into it).
   - `server/admin.ts` — `/api/admin/bun-actions` (status, `build-ui`, `restart-bun`, POST with a list; the
@@ -119,7 +121,9 @@ Each part arrives by its own move step, with its tests and its verify steps. Lan
   - `ui/app/host-router.ts` — `hostRouter(routes)` (hash history, scroll to top: what the host's
     `src/router/index.ts` exports) and `moduleRouteRecords(moduleRoutes)` (the modules' routes as
     vue-router records); `ui/app/host-i18n.ts` — `installHostI18n(app, messages)` (the saved language under
-    `<prefix>locale`, else Russian; English as the fallback) for the host's boot file;
+    `<prefix>locale`, else Russian; English as the fallback) for the host's boot file; it returns the app's
+    `locale`, which a host changes outside a component through `selectAppLocale` (`ui/shell/language.ts`,
+    also used by `ShellLanguageSelect`: changes the language and saves it under the host's key);
   - `scripts/init-host.bat <host server dir>` — the host's installation: bun.exe in its server dir (its
     own; else a copy of a neighbour host's `<workspace>\<repo>\server\bun.exe` — one Bun version per
     workspace; else the latest release, through VendorsCore's cached download), then `bun install` in the

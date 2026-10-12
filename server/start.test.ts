@@ -114,12 +114,13 @@ describe("createHostWebSocket", () => {
     const ws = socket([])
 
     let done = false
-    const pending = Promise.resolve(handler.message(ws, Buffer.from("{\"type\":\"ui_echo\"}", "utf8") as Buffer<ArrayBuffer>)).then(() => {
+    // Произвольное сообщение модуля (не эхо оболочки — его каркас модулям не отдаёт, тест ниже).
+    const pending = Promise.resolve(handler.message(ws, Buffer.from("{\"type\":\"m_ping\"}", "utf8") as Buffer<ArrayBuffer>)).then(() => {
       done = true
     })
     await Promise.resolve()
     // Второй модуль не ждёт первого, но обработчик сокета ждёт обоих.
-    expect(seen).toEqual(["slow {\"type\":\"ui_echo\"}", "fast {\"type\":\"ui_echo\"}"])
+    expect(seen).toEqual(["slow {\"type\":\"m_ping\"}", "fast {\"type\":\"m_ping\"}"])
     expect(done).toBe(false)
     release()
     await pending
@@ -128,6 +129,75 @@ describe("createHostWebSocket", () => {
     seen.length = 0
     await handler.message(ws, "plain")
     expect(seen).toEqual(["slow plain", "fast plain"])
+  })
+
+  // GCY2.2 (GCY-D23): эхо живости оболочки — забота каркаса. Без этого у хоста без модулей
+  // (Gnauralcity) эхо оставалось без ответа, и часы живости клиента через ~4,9 с рвали сокет.
+  describe("эхо живости оболочки (ui_echo)", () => {
+    interface EchoSocketLog {
+      readonly sent: string[]
+      readonly published: string[]
+    }
+    const echoSocket = (aLog: EchoSocketLog): HostSocket =>
+      ({
+        data: { kind: "ui", clientIp: "127.0.0.1" },
+        send: (aText: string) => { aLog.sent.push(aText) },
+        publish: (aTopic: string, aText: string) => { aLog.published.push(`${aTopic} ${aText}`) },
+      }) as unknown as HostSocket
+
+    const run = async (aMessage: string | Buffer<ArrayBuffer>, aModules = 2): Promise<{ log: EchoSocketLog; seen: string[] }> => {
+      const seen: string[] = []
+      const modules: HostServerModule[] = Array.from({ length: aModules }, (_aUnused, aIndex) => ({
+        name: `m${aIndex}`,
+        ws: { message: (_aSocket: HostSocket, aText: string) => { seen.push(`m${aIndex} ${aText}`) } },
+      }))
+      const log: EchoSocketLog = { sent: [], published: [] }
+      await createHostWebSocket(modules).message(echoSocket(log), aMessage)
+      return { log, seen }
+    }
+
+    test("годное эхо: ответ ТОМУ ЖЕ сокету, побайтно {type, requestId}; модули его не получают; publish нет", async () => {
+      const echo = "{\"type\":\"ui_echo\",\"requestId\":\"lc-7-a1b2c3\"}"
+      for (const message of [echo, Buffer.from(echo, "utf8") as Buffer<ArrayBuffer>]) {
+        const { log, seen } = await run(message)
+        expect(log.sent).toEqual(["{\"type\":\"ui_echo_ack\",\"requestId\":\"lc-7-a1b2c3\"}"])
+        expect(log.published).toEqual([])
+        expect(seen).toEqual([])
+      }
+    })
+
+    test("хост без модулей (Gnauralcity) эхо тоже отвечает", async () => {
+      const { log } = await run("{\"type\":\"ui_echo\",\"requestId\":\"x\"}", 0)
+      expect(log.sent).toEqual(["{\"type\":\"ui_echo_ack\",\"requestId\":\"x\"}"])
+    })
+
+    test("лишние поля эха не мешают и в ответ не попадают", async () => {
+      const { log, seen } = await run("{\"requestId\":\"r1\",\"extra\":1,\"type\":\"ui_echo\"}")
+      expect(log.sent).toEqual(["{\"type\":\"ui_echo_ack\",\"requestId\":\"r1\"}"])
+      expect(seen).toEqual([])
+    })
+
+    // Не эхо — значит, сообщение модулей: у MindWave такое даёт `invalid-message` и
+    // `bodymonitor_error «Unknown browser message type»` (замок T-83, S7), и каркас не смеет это съесть.
+    test("пустой/нестроковый/отсутствующий requestId и битый JSON — модулям, без ответа каркаса", async () => {
+      const notEchoes = [
+        "{\"type\":\"ui_echo\",\"requestId\":\"\"}",
+        "{\"type\":\"ui_echo\",\"requestId\":5}",
+        "{\"type\":\"ui_echo\",\"requestId\":null}",
+        "{\"type\":\"ui_echo\"}",
+        "{\"type\":\"ui_echo_ack\",\"requestId\":\"r\"}",
+        "{\"type\":\"ui_echo\",\"requestId\":\"r\"",
+        "null",
+        "\"ui_echo\"",
+        "[]",
+        "plain",
+      ]
+      for (const message of notEchoes) {
+        const { log, seen } = await run(message)
+        expect(log.sent).toEqual([])
+        expect(seen).toEqual([`m0 ${message}`, `m1 ${message}`])
+      }
+    })
   })
 })
 

@@ -14,8 +14,10 @@
 //     внутри `handleApiRequest`; пути у них свои, ни одна другая ручка их не принимает, так что
 //     порядок для запроса не изменился;
 //   * ws: `open` — подписка на тему `"ui"` (её публикуют модули: `server.publish("ui", …)`), затем
-//     `open` модулей по порядку; `message` — текст (Buffer → utf8), затем `message` КАЖДОГО модуля
-//     (каждый сам решает, его ли это тип; ждём всех); `close` — модулям по порядку;
+//     `open` модулей по порядку; `message` — текст (Buffer → utf8); эхо живости оболочки (`ui_echo`
+//     с непустым `requestId`) каркас отвечает сам, тому же сокету, и модулям не отдаёт (GCY2.2,
+//     GCY-D23 — `./ui-echo.ts`); всё прочее — `message` КАЖДОГО модуля (каждый сам решает, его ли
+//     это тип; ждём всех); `close` — модулям по порядку;
 //   * цепочка останова (`shutdown.ts`): SIGINT/SIGTERM/beforeExit — сразу после `Bun.serve`, как было.
 // Возвращает тот же объект `Bun.Server`, что отдал `Bun.serve`, — хосту он нужен для `publish`.
 
@@ -24,6 +26,7 @@ import type { Server, ServerWebSocket, WebSocketHandler } from "bun"
 import { createAdminBunActions, type AdminBunActions, type AdminBunActionsConfig } from "./admin"
 import { createShutdownChain, registerShutdownHandlers, type ModuleDisposer, type ShutdownChain } from "./shutdown"
 import { createStaticHandler } from "./static"
+import { uiEchoAckFor } from "./ui-echo"
 
 /** Путь ws-канала оболочки (клиент — `HostKitCore/ui/ws/ws.ts`). */
 export const UI_WS_PATH = "/ws/ui"
@@ -121,6 +124,13 @@ export const createHostWebSocket = (aModules: readonly HostServerModule[]): WebS
     },
     async message(aSocket, aMessage) {
       const text = typeof aMessage === "string" ? aMessage : Buffer.from(aMessage).toString("utf8")
+      // GCY2.2 (GCY-D23): эхо живости оболочки отвечает каркас — тому же сокету, модулям не отдаёт
+      // (правило и форма ответа — `./ui-echo.ts`).
+      const echoAck = uiEchoAckFor(text)
+      if (echoAck !== null) {
+        aSocket.send(echoAck)
+        return
+      }
       await Promise.all(aModules.map((aModule) => aModule.ws?.message?.(aSocket, text)))
     },
     close(aSocket) {

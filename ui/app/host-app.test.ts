@@ -5,7 +5,9 @@
 //   1. the modules' routes become vue-router records — name, path, component, in the modules' order;
 //      nothing else of the module's contribution (the nav label is the layout's business);
 //   2. vue-i18n of the app: the saved language is read under the HOST's key (`<prefix>locale` — MindWave's
-//      stays 'mindwave-locale'), Russian when none is saved, English as the fallback, Composition API.
+//      stays 'mindwave-locale'), Russian when none is saved, English as the fallback, Composition API;
+//   3. (GCY2.2) the language a host changes outside a component is the app's own, and the change is saved
+//      under the host's key.
 //
 // Run (part of the verify procedure, see AGENTS.md):
 //   cd HostKitCore && bun test
@@ -17,6 +19,7 @@ import { configureHostKeys } from './host-keys'
 import { DEFAULT_LOCALE, FALLBACK_LOCALE, installHostI18n } from './host-i18n'
 import { moduleRouteRecords } from './host-router'
 import type { CoreModuleRouteContribution } from './module-registry'
+import { selectAppLocale } from '../shell/language'
 
 describe('module routes as router records', () => {
   test('name, path and component, in order; the nav label stays out', () => {
@@ -80,5 +83,33 @@ describe("the app's vue-i18n", () => {
     expect((i18n.global.locale as unknown as { value: string }).value).toBe('ru')
     expect((i18n.global.fallbackLocale as unknown as { value: unknown }).value).toBe(FALLBACK_LOCALE)
     expect(FALLBACK_LOCALE).toBe('en')
+  })
+
+  // GCY2.2 (GCY-D21): the language menu item of a host changes the language OUTSIDE a component —
+  // through the handle installHostI18n returns and the shell's one language change, which the header's
+  // ShellLanguageSelect uses too.
+  test("the returned locale IS the app's one; selectAppLocale changes it and saves it under the host's key", () => {
+    configureHostKeys({ keyPrefix: 'gnauralcity-' })
+    Object.defineProperty(globalThis, 'localStorage', {
+      configurable: true,
+      value: {
+        getItem: (key: string) => store.get(key) ?? null,
+        setItem: (key: string, value: string) => { store.set(key, value) },
+      },
+    })
+    const used: unknown[] = []
+    const host = installHostI18n({ use: (plugin: unknown) => used.push(plugin) } as unknown as App, { en: { a: 'A' }, ru: { a: 'А' } })
+    const i18n = used[0] as I18n
+    expect(host.locale).toBe(i18n.global.locale as unknown as typeof host.locale)
+    expect(host.locale.value).toBe('ru')
+
+    selectAppLocale(host.locale, 'en')
+    expect((i18n.global.locale as unknown as { value: string }).value).toBe('en')
+    expect((i18n.global as unknown as { t: (key: string) => string }).t('a')).toBe('A')
+    expect([...store.entries()]).toEqual([['gnauralcity-locale', 'en']])
+
+    selectAppLocale(host.locale, 'ru')
+    expect((i18n.global as unknown as { t: (key: string) => string }).t('a')).toBe('А')
+    expect(store.get('gnauralcity-locale')).toBe('ru')
   })
 })
