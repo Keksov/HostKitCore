@@ -4,7 +4,7 @@
 //
 // Why a generated file and not just a base tsconfig to extend. A tsconfig that sets `paths` REPLACES the
 // `paths` of the config it extends, it does not merge them (measured on TypeScript 5.7.3 and vue-tsc
-// 2.2.12). Every host has `paths` of its own (`@protocol`, the quasar twins), so a pin kept in a shared
+// 2.2.12). Every host has `paths` of its own (the quasar twins, its own aliases), so a pin kept in a shared
 // base would be dropped by the first host that adds one alias. Hence the chain:
 //
 //   <host ui>/tsconfig.json          — the host's include/exclude; extends ↓

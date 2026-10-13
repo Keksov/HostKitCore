@@ -107,8 +107,8 @@ describe('a host given here (no registry, no host files — GCY-D1: HostKitCore 
   const host = sampleHost({
     uiDir: join(WS, 'Host', 'ui'),
     hostKitDir: join(WS, 'HostKitCore'),
-    aliases: { '@protocol': join(WS, 'Shared', 'protocol.ts') },
-    tsPaths: { '@protocol': ['../server/protocol.ts'] },
+    aliases: { '@hostlib': join(WS, 'Shared', 'hostlib.ts') },
+    tsPaths: { '@hostlib': ['../server/hostlib.ts'] },
   })
 
   test('the generated tsconfig extends the base, from the host, and carries the whole paths block', () => {
@@ -121,7 +121,7 @@ describe('a host given here (no registry, no host files — GCY-D1: HostKitCore 
     expect(json.compilerOptions.paths).toEqual(hostTsPaths(host))
     expect(Object.keys(json.compilerOptions.paths)).toEqual([
       'src/*', 'layouts/*', 'pages/*', 'components/*', 'boot/*', 'stores/*',
-      '@protocol',
+      '@hostlib',
       '@panel/*', '@tooltip/*', '@hostkit/*',
       'codemirror', '@codemirror/*', 'echarts', 'echarts/*',
       'vue', 'vue/*', 'pinia', 'pinia/*', 'vue-i18n', 'vue-i18n/*', 'vue-router', 'vue-router/*', 'quasar', 'quasar/*',
@@ -155,7 +155,7 @@ describe('a host given here (no registry, no host files — GCY-D1: HostKitCore 
       const twin = paths[`${name}/*`]?.[0] ?? ''
       expect(resolve(host.uiDir, twin.replace(/\/\*$/, ''))).toBe(resolve(alias[name] ?? '?'))
     }
-    expect(alias['@protocol']).toBe(join(WS, 'Shared', 'protocol.ts'))
+    expect(alias['@hostlib']).toBe(join(WS, 'Shared', 'hostlib.ts'))
   })
 
   test("GCY2.1: the root component and the store are the shell's, named relative to the host's ui/", () => {

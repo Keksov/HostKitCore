@@ -1,5 +1,7 @@
 import { ref, type Ref } from 'vue'
 
+import type { UiEchoRequest } from '../../server/ui-echo'
+
 // ── GCY1.4 (план gnauralcity, GCY-D29/GCY-D2): ТРАНСПОРТ ОБОЛОЧКИ, БЕЗ ЗНАНИЯ ПРОТОКОЛОВ МОДУЛЕЙ ──────
 //
 // Файл переехал из `MindWaveCore/ui/services/ws.ts` побайтно (sha256 сверен) и только потом правлен:
@@ -57,11 +59,9 @@ export interface WsTransport<TOut extends WsMessage = WsMessage> {
   init(): void
 }
 
-/** LC3.1a (LC-D13): эхо живости канала — служебное сообщение оболочки, а не протокол модуля. */
-interface UiEchoRequest {
-  readonly type: 'ui_echo'
-  readonly requestId: string
-}
+// LC3.1a (LC-D13): эхо живости канала — служебное сообщение оболочки, а не протокол модуля. Форма
+// (`UiEchoRequest`) с GCY3.1 объявлена один раз — рядом с ответчиком каркаса, `../../server/ui-echo.ts`
+// (импорт только типа: в сборку интерфейса серверный файл не попадает).
 
 const MAX_RECONNECT_MS = 10_000
 const BASE_RECONNECT_MS = 1_000

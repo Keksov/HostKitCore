@@ -75,7 +75,7 @@ describe("import-graph.ts", () => {
     const from = join(root, "host/server")
     expect(resolveLocalImport("pkg", from)).toBeNull()
     expect(resolveLocalImport("node:fs", from)).toBeNull()
-    expect(resolveLocalImport("@protocol", from)).toBeNull()
+    expect(resolveLocalImport("@hostkit/ws/ws", from)).toBeNull()
     expect(resolveLocalImport("./missing", from)).toBeNull()
     expect(rel([resolveLocalImport("../../mod/server/b.js", from) as string])).toEqual(["mod/server/b.ts"])
     expect(rel([resolveLocalImport("./dir", from) as string])).toEqual(["host/server/dir/index.ts"])
