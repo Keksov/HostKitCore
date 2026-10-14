@@ -21,6 +21,27 @@ export const errorResponse = (aStatus: number, aMessage: string): Response => {
   return jsonResponse({ error: aMessage }, aStatus)
 }
 
+// GCY3.6 (GCY-D4: утилиты разбора запроса — каркаса): булев параметр строки запроса. Перенесён из
+// `MindWaveCore/server/server.ts` (был `:248-262` редакции 45b7899) побайтно, добавлен только `export`.
+// Его зовут ручка логов хоста (`favorite`) и ручка `/api/audio/file` модуля GnauralCore (`singleLoop`) —
+// одна копия на обоих. Текст отказа (с «favorite» и для `singleLoop` тоже) — прежний: у `audio/file`
+// вызов стоит вне try, и исключение уходит в Bun как 500 (поведение не менялось).
+export const parseBooleanQuery = (aValue: string | null): boolean | undefined => {
+  if (aValue === null || aValue === "") {
+    return undefined
+  }
+
+  if (aValue === "1" || aValue.toLowerCase() === "true") {
+    return true
+  }
+
+  if (aValue === "0" || aValue.toLowerCase() === "false") {
+    return false
+  }
+
+  throw new Error("favorite must be true/false or 1/0")
+}
+
 export const parseJsonBody = async (aRequest: Request): Promise<unknown> => {
   try {
     return await aRequest.json()

@@ -9,10 +9,11 @@
 //     лишь за ним), порт и idleTimeout — от хоста (у MindWave idleTimeout 0 — починка F-0026, замок T-42);
 //   * `fetch`: upgrade `/ws/ui` (данные сокета `{ kind: "ui", clientIp }`) → админ-ручки
 //     `/api/admin/bun-actions*` → HTTP-обработчики модулей ПО ПОРЯДКУ списка (первый не-`null` ответ
-//     выигрывает) → статика. Админ-ручки раньше модулей: у хоста бывает общий хвост «нет такой
-//     /api-ручки — 404» (у MindWave — `handleApiRequest`), и он съел бы их. До GCY1.7 они стояли
-//     внутри `handleApiRequest`; пути у них свои, ни одна другая ручка их не принимает, так что
-//     порядок для запроса не изменился;
+//     выигрывает) → хвост `/api/*`: JSON 404 «API route not found» (с GCY3.6) → статика. Админ-ручки
+//     раньше модулей: до GCY3.6 общий хвост «нет такой /api-ручки — 404» стоял у хоста (у MindWave —
+//     `handleApiRequest`), и он съел бы их. До GCY1.7 они стояли внутри `handleApiRequest`; пути у них
+//     свои, ни одна другая ручка их не принимает, так что порядок для запроса не изменился. Хвост 404
+//     с GCY3.6 — каркаса: модуль, отвечающий 404 на чужой `/api`, съел бы ручки модулей после него;
 //   * ws: `open` — подписка на тему `"ui"` (её публикуют модули: `server.publish("ui", …)`), затем
 //     `open` модулей по порядку; `message` — текст (Buffer → utf8); эхо живости оболочки (`ui_echo`
 //     с непустым `requestId`) каркас отвечает сам, тому же сокету, и модулям не отдаёт (GCY2.2,
@@ -24,6 +25,7 @@
 import type { Server, ServerWebSocket, WebSocketHandler } from "bun"
 
 import { createAdminBunActions, type AdminBunActions, type AdminBunActionsConfig } from "./admin"
+import { errorResponse } from "./http"
 import { createShutdownChain, registerShutdownHandlers, type ModuleDisposer, type ShutdownChain } from "./shutdown"
 import { createStaticHandler } from "./static"
 import { uiEchoAckFor } from "./ui-echo"
@@ -107,6 +109,16 @@ export const createHostFetch = (aParts: HostFetchParts) => {
       if (moduleResponse !== null) {
         return moduleResponse
       }
+    }
+
+    // GCY3.6 (GCY-D25, решение T1): ни один модуль не взял `/api/*` — JSON 404 «API route not found».
+    // Этот хвост стоял последней строкой `handleApiRequest` MindWave (`server.ts`, редакция 45b7899) и
+    // переехал сюда, когда ручки разошлись по двум модулям (хост и аудио-компонент): у модуля хвоста
+    // быть не может — он съел бы ручки модулей, стоящих после него. Признак «это /api» — тот же, что
+    // был у хоста: первый непустой сегмент пути. Клиент GnauralCore узнаёт по этому ответу «сервер
+    // прошлой сборки» (`GnauralCore/ui/project-api.ts`), поэтому текст и форма — прежние, байт в байт.
+    if (url.pathname.split("/").filter(Boolean)[0] === "api") {
+      return errorResponse(404, "API route not found")
     }
 
     return aParts.serveStatic(url.pathname)

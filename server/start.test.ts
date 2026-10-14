@@ -81,6 +81,51 @@ describe("createHostFetch — порядок", () => {
     expect(await run("/api/other")).toEqual(["B", ["admin", "a", "b"]])
     expect(await run("/index.html")).toEqual(["S", ["admin", "a", "b", "static /index.html"]])
   })
+
+  // GCY3.6 (GCY-D25, T1): хвост «нет такой /api-ручки» — у каркаса, ПОСЛЕ всех модулей. До GCY3.6 он
+  // стоял последней строкой handleApiRequest MindWave; клиент GnauralCore узнаёт по нему «сервер
+  // прошлой сборки» (GnauralCore/ui/project-api.ts), поэтому форма — байт в байт прежняя.
+  test("/api/*, который не взял ни один модуль, — JSON 404 «API route not found» после ВСЕХ модулей; не /api — статика", async () => {
+    const calls: string[] = []
+    const fetch = createHostFetch({
+      admin: { handleRequest: async () => { calls.push("admin"); return null } },
+      modules: [
+        { name: "a", fetch: () => { calls.push("a"); return null } },
+        { name: "b", fetch: () => { calls.push("b"); return null } },
+      ],
+      serveStatic: async (aPathname) => {
+        calls.push(`static ${aPathname}`)
+        return new Response("S")
+      },
+    })
+    const { server } = fakeServer()
+
+    for (const path of ["/api/nope", "/api", "/api/", "/api/audio/nope?x=1", "//api/projects/x/y"]) {
+      calls.length = 0
+      const response = (await fetch(request(path), server)) as Response
+      expect(`${path}: ${response.status}`).toBe(`${path}: 404`)
+      expect(response.headers.get("content-type")).toBe("application/json; charset=utf-8")
+      expect(response.headers.get("cache-control")).toBe("no-store")
+      expect(await response.text()).toBe("{\"error\":\"API route not found\"}")
+      expect(calls).toEqual(["admin", "a", "b"])
+    }
+
+    // Признак «это /api» — первый непустой сегмент пути, как было у хоста: /apix и /x/api — не /api.
+    for (const path of ["/apix", "/x/api", "/index.html"]) {
+      calls.length = 0
+      const response = (await fetch(request(path), server)) as Response
+      expect(await response.text()).toBe("S")
+      expect(calls).toEqual(["admin", "a", "b", `static ${new URL(`http://h${path}`).pathname}`])
+    }
+
+    // Модуль, взявший /api-путь, хвоста не видит.
+    const owned = createHostFetch({
+      admin: { handleRequest: async () => null },
+      modules: [{ name: "m", fetch: () => new Response("M") }],
+      serveStatic: async () => new Response("S"),
+    })
+    expect(await ((await owned(request("/api/nope"), server)) as Response).text()).toBe("M")
+  })
 })
 
 describe("createHostWebSocket", () => {

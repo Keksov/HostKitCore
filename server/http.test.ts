@@ -3,7 +3,7 @@
 
 import { afterEach, describe, expect, test } from "bun:test"
 
-import { errorResponse, jsonResponse, parseJsonBody } from "./http"
+import { errorResponse, jsonResponse, parseBooleanQuery, parseJsonBody } from "./http"
 import { ensureLoopbackNoProxy, isLoopbackAddress } from "./loopback"
 
 describe("http.ts", () => {
@@ -33,6 +33,18 @@ describe("http.ts", () => {
     expect(caught).toBeInstanceOf(Error)
     expect((caught as Error).message).toBe("Invalid JSON body")
     expect((caught as Error).cause).toBeInstanceOf(Error)
+  })
+
+  // GCY3.6: перенесена из MindWaveCore/server/server.ts побайтно; её зовут ручка логов хоста (favorite)
+  // и /api/audio/file компонента (singleLoop). Отказ — прежний текст, включая слово «favorite».
+  test("parseBooleanQuery: пусто — undefined; 1/true и 0/false без учёта регистра; иное — прежний отказ", () => {
+    expect(parseBooleanQuery(null)).toBeUndefined()
+    expect(parseBooleanQuery("")).toBeUndefined()
+    expect(["1", "true", "TRUE", "True"].map(parseBooleanQuery)).toEqual([true, true, true, true])
+    expect(["0", "false", "FALSE", "False"].map(parseBooleanQuery)).toEqual([false, false, false, false])
+    for (const bad of ["yes", "2", " 1", "on"]) {
+      expect(() => parseBooleanQuery(bad)).toThrow(new Error("favorite must be true/false or 1/0"))
+    }
   })
 })
 
