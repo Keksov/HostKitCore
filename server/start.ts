@@ -17,8 +17,11 @@
 //   * ws: `open` — подписка на тему `"ui"` (её публикуют модули: `server.publish("ui", …)`), затем
 //     `open` модулей по порядку; `message` — текст (Buffer → utf8); эхо живости оболочки (`ui_echo`
 //     с непустым `requestId`) каркас отвечает сам, тому же сокету, и модулям не отдаёт (GCY2.2,
-//     GCY-D23 — `./ui-echo.ts`); всё прочее — `message` КАЖДОГО модуля (каждый сам решает, его ли
-//     это тип; ждём всех); `close` — модулям по порядку;
+//     GCY-D23 — `./ui-echo.ts`); всё прочее — по ЗАЯВКАМ (GCY3.7, GCY-D25): разобранный JSON
+//     предлагается `ws.claims` модулей по порядку списка, и ПЕРВЫЙ заявивший получает сообщение один;
+//     незаявленное (и битый JSON — его не заявляет никто) — `message` каждого модуля БЕЗ заявки
+//     (у MindWave это его диспетчер: `invalid-json`, `invalid-message`, свои типы); ждём всех;
+//     `close` — модулям по порядку;
 //   * цепочка останова (`shutdown.ts`): SIGINT/SIGTERM/beforeExit — сразу после `Bun.serve`, как было.
 // Возвращает тот же объект `Bun.Server`, что отдал `Bun.serve`, — хосту он нужен для `publish`.
 
@@ -45,6 +48,13 @@ export type HostServerInstance = Server<HostSocketData>
 export type HostSocket = ServerWebSocket<HostSocketData>
 
 export interface HostServerModuleWs {
+  /**
+   * Заявка на сообщение (GCY3.7, GCY-D25): `true` — «это моё». Получает разобранный JSON (битый JSON
+   * не предлагается никому). Заявка обязана ПРОВЕРЯТЬ форму, а не только тип: незаявленное уходит
+   * модулям без заявки, и их ответ на негодное («неизвестный тип») не должен пропасть. Модуль без
+   * `claims` — приёмник всего незаявленного (прежняя раздача).
+   */
+  claims?(aMessage: unknown): boolean
   open?(aSocket: HostSocket): void
   message?(aSocket: HostSocket, aText: string): void | Promise<void>
   close?(aSocket: HostSocket): void
@@ -125,7 +135,18 @@ export const createHostFetch = (aParts: HostFetchParts) => {
   }
 }
 
-/** ws-обработчик сервера хоста: подписка на тему оболочки и раздача модулям. */
+/** Нет годного JSON — заявки не спрашиваются (отдельный знак: любой разобранный JSON — значение). */
+const NOT_JSON: unique symbol = Symbol("not-json")
+
+const parseForClaims = (aText: string): unknown => {
+  try {
+    return JSON.parse(aText) as unknown
+  } catch {
+    return NOT_JSON
+  }
+}
+
+/** ws-обработчик сервера хоста: подписка на тему оболочки и раздача модулям по заявкам. */
 export const createHostWebSocket = (aModules: readonly HostServerModule[]): WebSocketHandler<HostSocketData> => {
   return {
     open(aSocket) {
@@ -143,7 +164,24 @@ export const createHostWebSocket = (aModules: readonly HostServerModule[]): WebS
         aSocket.send(echoAck)
         return
       }
-      await Promise.all(aModules.map((aModule) => aModule.ws?.message?.(aSocket, text)))
+      // GCY3.7 (GCY-D25): заявки. Между приходом сообщения и вызовом модуля нет ни одного `await` —
+      // синхронный префикс обработчика модуля (снимок поколения `beginStart`, F-0042 путь 5) остаётся
+      // в том же тике, что и раньше.
+      const parsed = parseForClaims(text)
+      if (parsed !== NOT_JSON) {
+        for (const hostModule of aModules) {
+          const ws = hostModule.ws
+          if (ws?.claims !== undefined && ws.claims(parsed) === true) {
+            await ws.message?.(aSocket, text)
+            return
+          }
+        }
+      }
+      await Promise.all(
+        aModules
+          .filter((aModule) => aModule.ws?.claims === undefined)
+          .map((aModule) => aModule.ws?.message?.(aSocket, text)),
+      )
     },
     close(aSocket) {
       for (const hostModule of aModules) {

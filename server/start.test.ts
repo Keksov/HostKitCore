@@ -244,6 +244,128 @@ describe("createHostWebSocket", () => {
       }
     })
   })
+
+  // GCY3.7 (GCY-D25), замок L-W1: ЗАЯВКИ МОДУЛЕЙ НА ws-СООБЩЕНИЯ. Модуль компонента (GnauralCore) заявляет
+  // свои типы, хост (MindWave) остаётся без заявки и получает всё прочее — в том числе битый JSON и
+  // неизвестные типы, на которые он отвечает `invalid-json`/`invalid-message` (T-83, S7). Заявленное не
+  // должно дойти до хоста (двойная строка `[ui:ws]`, чужой ответ), незаявленное — до заявителя.
+  describe("заявки модулей (claims)", () => {
+    interface ClaimsLog {
+      readonly seen: string[]
+      readonly asked: Array<[string, unknown]>
+    }
+
+    const claimant = (aLog: ClaimsLog, aName: string, aClaims: (aValue: unknown) => boolean): HostServerModule => ({
+      name: aName,
+      ws: {
+        claims: (aValue) => {
+          aLog.asked.push([aName, aValue])
+          return aClaims(aValue)
+        },
+        message: (_aSocket, aText) => { aLog.seen.push(`${aName} ${aText}`) },
+      },
+    })
+    const fallback = (aLog: ClaimsLog, aName: string): HostServerModule => ({
+      name: aName,
+      ws: { message: (_aSocket, aText) => { aLog.seen.push(`${aName} ${aText}`) } },
+    })
+    const typeOf = (aValue: unknown): unknown =>
+      typeof aValue === "object" && aValue !== null ? (aValue as { readonly type?: unknown }).type : undefined
+    const ackSocket = (aSent: string[]): HostSocket =>
+      ({ data: { kind: "ui", clientIp: "127.0.0.1" }, send: (aText: string) => { aSent.push(aText) } }) as unknown as HostSocket
+
+    /** host (без заявки) · a (заявляет a_x) · b (заявляет всё на a_, то есть и a_x) · c (без заявки). */
+    const stand = (): { log: ClaimsLog; handler: ReturnType<typeof createHostWebSocket> } => {
+      const log: ClaimsLog = { seen: [], asked: [] }
+      const handler = createHostWebSocket([
+        fallback(log, "host"),
+        claimant(log, "a", (aValue) => typeOf(aValue) === "a_x"),
+        claimant(log, "b", (aValue) => String(typeOf(aValue)).startsWith("a_")),
+        fallback(log, "c"),
+      ])
+      return { log, handler }
+    }
+
+    test("заявленное получает только ПЕРВЫЙ заявивший; заявке — разобранный JSON; дальше заявки не спрашиваются", async () => {
+      const { log, handler } = stand()
+      const text = "{\"type\":\"a_x\",\"n\":1}"
+      await handler.message(ackSocket([]), text)
+      expect(log.seen).toEqual([`a ${text}`])
+      expect(log.asked).toEqual([["a", { type: "a_x", n: 1 }]])
+
+      log.seen.length = 0
+      log.asked.length = 0
+      const other = "{\"type\":\"a_y\"}"
+      await handler.message(ackSocket([]), other)
+      expect(log.seen).toEqual([`b ${other}`])
+      expect(log.asked).toEqual([["a", { type: "a_y" }], ["b", { type: "a_y" }]])
+    })
+
+    test("незаявленное — всем модулям БЕЗ заявки по порядку; заявителям — нет", async () => {
+      const { log, handler } = stand()
+      for (const text of ["{\"type\":\"zzz\"}", "null", "[]", "\"a_x\"", "{\"type\":\"ui_echo\",\"requestId\":\"\"}"]) {
+        log.seen.length = 0
+        log.asked.length = 0
+        await handler.message(ackSocket([]), text)
+        expect(log.seen).toEqual([`host ${text}`, `c ${text}`])
+        expect(log.asked.map(([aName]) => aName)).toEqual(["a", "b"])
+        expect(log.asked[0]![1]).toEqual(JSON.parse(text))
+      }
+    })
+
+    test("битый JSON заявкам не предлагается и уходит модулям без заявки", async () => {
+      const { log, handler } = stand()
+      for (const text of ["plain", "{\"type\":\"a_x\"", ""]) {
+        log.seen.length = 0
+        await handler.message(ackSocket([]), text)
+        expect(log.seen).toEqual([`host ${text}`, `c ${text}`])
+      }
+      expect(log.asked).toEqual([])
+    })
+
+    test("эхо оболочки отвечает каркас: заявки не спрашиваются, даже если модуль заявляет всё", async () => {
+      const log: ClaimsLog = { seen: [], asked: [] }
+      const sent: string[] = []
+      await createHostWebSocket([claimant(log, "all", () => true), fallback(log, "host")])
+        .message(ackSocket(sent), "{\"type\":\"ui_echo\",\"requestId\":\"r9\"}")
+      expect(sent).toEqual(["{\"type\":\"ui_echo_ack\",\"requestId\":\"r9\"}"])
+      expect(log.asked).toEqual([])
+      expect(log.seen).toEqual([])
+    })
+
+    test("модуль заявившего зовётся в ТОМ ЖЕ тике (до первого await каркаса); обработчик ждёт его промиса", async () => {
+      // Окно F-0042 (путь 5): снимок поколения `beginStart` берётся первой синхронной строкой обработчика
+      // модуля. `await` каркаса перед вызовом модуля отодвинул бы его за следующее сообщение того же тика.
+      const seen: string[] = []
+      let release: () => void = () => undefined
+      const slow = new Promise<void>((aResolve) => {
+        release = aResolve
+      })
+      const handler = createHostWebSocket([
+        { name: "host", ws: { message: () => { seen.push("host") } } },
+        { name: "a", ws: { claims: () => true, message: async () => { seen.push("a"); await slow } } },
+      ])
+      let done = false
+      const pending = Promise.resolve(handler.message(ackSocket([]), "{\"type\":\"a_x\"}")).then(() => {
+        done = true
+      })
+      expect(seen).toEqual(["a"])
+      await Promise.resolve()
+      expect(done).toBe(false)
+      release()
+      await pending
+      expect(done).toBe(true)
+    })
+
+    test("хост без модуля-приёмника (Gnauralcity): незаявленное молча пропадает, как без модулей", async () => {
+      const log: ClaimsLog = { seen: [], asked: [] }
+      const sent: string[] = []
+      await createHostWebSocket([claimant(log, "a", () => false)]).message(ackSocket(sent), "{\"type\":\"zzz\"}")
+      expect(log.seen).toEqual([])
+      expect(sent).toEqual([])
+      expect(log.asked).toEqual([["a", { type: "zzz" }]])
+    })
+  })
 })
 
 describe("static.ts", () => {
