@@ -22,6 +22,7 @@ import { join, relative } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
 import { type HostUiConfig, QUASAR_TS_PATHS, SHELL_ALIASES, hostPins, mergeDistinct } from './host-ui'
+import { hostModuleEntries } from './module-packages'
 import { pinnedTsPaths } from './pins'
 
 /** The generated file's name, next to the host's tsconfig.json (which extends it). */
@@ -38,14 +39,18 @@ const slash = (pathValue: string): string => pathValue.replace(/\\/g, '/')
 /** A path from the host's ui/ to `target`, in the form tsconfig takes (forward slashes). */
 const fromUi = (host: HostUiConfig, target: string): string => slash(relative(host.uiDir, target))
 
-/** The host's whole tsconfig `paths`: quasar twins, the host's own, the shell's aliases, the pin. */
+/**
+ * The host's whole tsconfig `paths`: quasar twins, the host's own, the shell's aliases, the entries of its
+ * module packages (GCY4.1 — one exact key each, see module-packages.ts), the pin.
+ */
 export function hostTsPaths(host: HostUiConfig): Record<string, string[]> {
   const shell = Object.fromEntries(
     Object.entries(SHELL_ALIASES).map(([name, rel]) => [`${name}/*`, [`${fromUi(host, join(host.hostKitDir, ...rel.split('/')))}/*`]]),
   )
   const own = Object.fromEntries(Object.entries(host.tsPaths).map(([name, targets]) => [name, [...targets]]))
   const quasar = Object.fromEntries(Object.entries(QUASAR_TS_PATHS).map(([name, targets]) => [name, [...targets]]))
-  return mergeDistinct('tsconfig path', quasar, own, shell, pinnedTsPaths(hostPins(host), './node_modules'))
+  const modules = Object.fromEntries(hostModuleEntries(host.modulePackages).map((entry) => [entry.specifier, [fromUi(host, entry.file)]]))
+  return mergeDistinct('tsconfig path', quasar, own, shell, modules, pinnedTsPaths(hostPins(host), './node_modules'))
 }
 
 /** The full text of the host's generated tsconfig (LF; validate-qa.js compares with line ends normalised). */

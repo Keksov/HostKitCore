@@ -40,6 +40,13 @@ export interface HostUiConfig {
    */
   readonly modulePins: readonly PinnedPackage[]
   /**
+   * GCY4.1 (GCY-D14): the host's module packages — their folders (absolute), each with a package.json
+   * whose `name` and `exports` are the module's declared entry points. The factory turns each entry into
+   * an anchored bundler alias and an exact tsconfig `paths` key (`module-packages.ts`), so the host — and
+   * the other modules it bundles — import a module by name and only through its entries.
+   */
+  readonly modulePackages: readonly string[]
+  /**
    * Rollup `manualChunks` by package: a module from `node_modules/<package>/` goes into `chunk`; the
    * first matching rule wins. Empty: the factory leaves rollup's chunking alone.
    */

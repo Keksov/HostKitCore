@@ -16,6 +16,7 @@
 import { join } from 'node:path'
 
 import { type HostUiConfig, hostPins, hostSourceFiles, mergeDistinct, shellAliasTargets } from './host-ui'
+import { hostModuleEntries, moduleViteAliases } from './module-packages'
 import { pinnedViteAliases, type ViteAliasEntry } from './pins'
 
 /** The parts of the Vite config `extendViteConf` touches (quasar hands over the whole config). */
@@ -41,6 +42,10 @@ export function hostQuasarConfig(host: HostUiConfig) {
   // The pin: one list, from which the host's generated tsconfig gets its `paths` too.
   const pins = hostPins(host)
   const alias = mergeDistinct('alias', host.aliases, shellAliasTargets(host.hostKitDir))
+  // GCY4.1 (GCY-D14): the modules' declared entries (module-packages.ts) — read once, when the config is
+  // built; a name that would also be a host or shell alias is refused like any other double entry.
+  const moduleEntries = hostModuleEntries(host.modulePackages)
+  mergeDistinct('alias', alias, Object.fromEntries(moduleEntries.map((entry) => [entry.specifier, entry.file])))
 
   return function (/* ctx */) {
     return {
@@ -96,6 +101,9 @@ export function hostQuasarConfig(host: HostUiConfig) {
           // of vue — two reactivity systems, one app, and singletons that stop being single.
           // GCY1.3: HostKitCore/ui carries its own vue (and, through bun's peer install, quasar and
           // vue-i18n) for the same reason — the same pins keep the shell on the host's copies.
+          // GCY4.1: the modules by name — anchored, one per declared entry, so an undeclared (deep) path
+          // by name resolves nowhere. Before the pin: a module's name never collides with a pinned package.
+          currentAliases.push(...moduleViteAliases(moduleEntries))
           currentAliases.push(...pinnedViteAliases(pins, join(host.uiDir, 'node_modules')))
           viteConf.resolve.alias = currentAliases
 

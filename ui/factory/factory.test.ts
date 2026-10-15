@@ -16,12 +16,14 @@
 //
 // Run (part of the verify procedure, see AGENTS.md):
 //   cd HostKitCore && bun test
-import { describe, expect, test } from 'bun:test'
-import { existsSync } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { afterAll, describe, expect, test } from 'bun:test'
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join, relative, resolve } from 'node:path'
 
 import { BASE_TSCONFIG, hostTsPaths, renderHostTsconfig } from './host-tsconfig'
 import { type HostUiConfig, mergeDistinct, SHELL_ALIASES } from './host-ui'
+import { hostModuleEntries, modulePackageEntries } from './module-packages'
 import { type PinnedPackage, SHELL_PINS, pinLabel, pinnedTsPaths, pinnedViteAliases, type ViteAliasEntry } from './pins'
 import { hostQuasarConfig } from './quasar-config'
 
@@ -176,6 +178,86 @@ describe('a host given here (no registry, no host files — GCY-D1: HostKitCore 
   })
 })
 
+// GCY4.1 (GCY-D14): a host imports a module by NAME, only through the entries the module declares in its
+// package.json `exports`. One table (the module's), two halves (the bundler's anchored aliases, the type
+// checker's exact `paths`): every entry lands on the same file in both, and an undeclared path by name
+// lands nowhere in either. The module packages here are written into a temp folder — HostKitCore reads
+// no module of the workspace (GCY-D1).
+describe('module packages by name (GCY4.1, GCY-D14)', () => {
+  const WS = mkdtempSync(join(tmpdir(), 'hostkit-factory-modules-'))
+  const write = (aPath: string, aText: string): void => {
+    mkdirSync(join(WS, aPath, '..'), { recursive: true })
+    writeFileSync(join(WS, aPath), aText)
+  }
+  const modPackage = (aDir: string, aPkg: unknown): string => {
+    write(`${aDir}/package.json`, JSON.stringify(aPkg, null, 2))
+    return join(WS, aDir)
+  }
+  for (const file of ['index.ts', 'module.ts', 'widgets.ts', 'protocol/index.ts', 'stores/audio.ts']) write(`Mod/ui/${file}`, 'export {}\n')
+  write('Mod/server/index.ts', 'export {}\n')
+  const modUi = modPackage('Mod/ui', {
+    name: '@mod/ui',
+    '//exports': 'a comment key next to the table, as in GnauralCore',
+    exports: { '.': './index.ts', './module': './module.ts', './widgets': './widgets.ts', './protocol': './protocol/index.ts' },
+  })
+  const modServer = modPackage('Mod/server', { name: '@mod/server', exports: { '.': './index.ts' } })
+  const host = sampleHost({ uiDir: join(WS, 'Host', 'ui'), hostKitDir: join(WS, 'HostKitCore'), modulePackages: [modUi] })
+
+  afterAll(() => rmSync(WS, { recursive: true, force: true }))
+
+  test("the entries are the package's name and exports, in its order, onto absolute files", () => {
+    expect(modulePackageEntries(modUi).map((entry) => [entry.specifier, entry.file])).toEqual([
+      ['@mod/ui', join(WS, 'Mod', 'ui', 'index.ts')],
+      ['@mod/ui/module', join(WS, 'Mod', 'ui', 'module.ts')],
+      ['@mod/ui/widgets', join(WS, 'Mod', 'ui', 'widgets.ts')],
+      ['@mod/ui/protocol', join(WS, 'Mod', 'ui', 'protocol', 'index.ts')],
+    ])
+  })
+
+  test('one table, two halves: each entry lands on the same file; an undeclared path by name lands nowhere', () => {
+    const aliases = runExtend(host).resolve.alias
+    const paths = hostTsPaths(host)
+    for (const entry of modulePackageEntries(modUi)) {
+      expect(viteResolve(aliases, entry.specifier)).toBe(entry.file.replace(/\\/g, '/'))
+      expect(resolve(host.uiDir, tsResolve(paths, entry.specifier) ?? '?')).toBe(entry.file)
+      expect(paths[entry.specifier]).toEqual([relative(host.uiDir, entry.file).replace(/\\/g, '/')])
+    }
+    for (const deep of ['@mod/ui/stores/audio', '@mod/ui/module/x', '@mod/ui/', '@mod/uix', '@mod/server']) {
+      expect([deep, viteResolve(aliases, deep)]).toEqual([deep, null])
+      expect([deep, tsResolve(paths, deep)]).toEqual([deep, null])
+    }
+    // The generated tsconfig puts them after the shell's aliases, before the pin.
+    const keys = Object.keys(paths)
+    expect(keys.slice(keys.indexOf('@hostkit/*') + 1, keys.indexOf('codemirror'))).toEqual([
+      '@mod/ui', '@mod/ui/module', '@mod/ui/widgets', '@mod/ui/protocol',
+    ])
+  })
+
+  test('several packages: both, in the host order', () => {
+    const both = sampleHost({ uiDir: host.uiDir, hostKitDir: host.hostKitDir, modulePackages: [modServer, modUi] })
+    expect(hostModuleEntries(both.modulePackages).map((entry) => entry.specifier)).toEqual([
+      '@mod/server', '@mod/ui', '@mod/ui/module', '@mod/ui/widgets', '@mod/ui/protocol',
+    ])
+    expect(viteResolve(runExtend(both).resolve.alias, '@mod/server')).toBe(join(WS, 'Mod', 'server', 'index.ts').replace(/\\/g, '/'))
+  })
+
+  test('a table the factory cannot honour exactly is refused, loudly', () => {
+    const bad = (aName: string, aExports: unknown): string => modPackage(`Bad/${aName}`, { name: `@bad/${aName}`, exports: aExports })
+    write('Bad/x.ts', 'export {}\n')
+    expect(() => modulePackageEntries(bad('star', { './*': './*.ts' }))).toThrow('is a pattern')
+    expect(() => modulePackageEntries(bad('cond', { '.': { import: './index.ts' } }))).toThrow('is not a plain')
+    expect(() => modulePackageEntries(bad('missing', { '.': './nope.ts' }))).toThrow('names a missing file')
+    expect(() => modulePackageEntries(bad('none', undefined))).toThrow('no "exports" table')
+    expect(() => modulePackageEntries(bad('empty', {}))).toThrow('"exports" is empty')
+    expect(() => modulePackageEntries(join(WS, 'Nowhere'))).toThrow('no package.json')
+    // The same name from two packages, and a module name that is also a host alias.
+    expect(() => hostModuleEntries([modUi, modUi])).toThrow('"@mod/ui" is declared twice')
+    const clash = sampleHost({ uiDir: host.uiDir, hostKitDir: host.hostKitDir, modulePackages: [modUi], aliases: { '@mod/ui': 'x' } })
+    expect(() => hostQuasarConfig(clash)).toThrow('"@mod/ui" is set twice')
+    expect(() => hostTsPaths(sampleHost({ ...clash, aliases: {}, tsPaths: { '@mod/ui/widgets': ['x'] } }))).toThrow('"@mod/ui/widgets" is set twice')
+  })
+})
+
 
 describe('what moved from the host config behaves as it did there', () => {
   test('warn build off: no define, no marker plugin', () => {
@@ -251,6 +333,7 @@ function sampleHost(overrides: Partial<HostUiConfig>): HostUiConfig {
     aliases: {},
     tsPaths: {},
     modulePins: SAMPLE_MODULE_PINS,
+    modulePackages: [],
     chunks: [
       { package: 'zrender', chunk: 'charts-renderer' },
       { package: 'echarts', chunk: 'charts-core' },
