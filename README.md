@@ -97,6 +97,11 @@ Each part arrives by its own move step, with its tests and its verify steps. Lan
   - `server/http.ts` (`jsonResponse`, `errorResponse` → `{ error }`, `parseJsonBody` → "Invalid JSON body"),
     `server/loopback.ts` (`ensureLoopbackNoProxy`, `isLoopbackAddress`), `server/port.ts`
     (`resolveServerPort(default)`: `--port=N`, then `PORT`, then the host's default).
+  - `server/host-env.ts` (GCY4.4, GCY-D38) — `readHostEnv("HK_<NAME>", { fallback? })`: a host's
+    environment under neutral `HK_*` names, trimmed, an empty value counts as unset; `fallback` names an
+    old variable (MindWave's `MW_*`, until phase 6 of the gnauralcity plan) read when the new one is unset,
+    and each such read prints one `[host-env] …` line. Plain `process.env`, no `Bun.*` — uitest (node)
+    reads its port and sandbox through it too.
   - `server/dev-watch.ts` — the dev watcher (GCY-D30; `bun --watch` on Windows only sees files under the
     process cwd, GCY1.1). The host's `dev` script runs
     `bun <HostKitCore>/server/dev-watch.ts --entry server.ts --default-port <n> [--watch <dir>]…` from its
