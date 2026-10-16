@@ -13,7 +13,8 @@ rem      (WORKSPACE\REPO\server\bun.exe -- every host of the workspace on one Bu
 rem      latest release from GitHub, through the cache of VendorsCore\common\win\release_asset_download.bat
 rem      (HOST_SERVER_DIR\tmp\bun) when VendorsCore is there, else a plain download;
 rem   2. bun install in the server dir, then in the ui dir.
-rem HK_DRY_RUN=1 (old name MW_DRY_RUN, read second -- GCY-D38) prints the paths and does nothing.
+rem HK_DRY_RUN=1 (GCY-D38) prints the paths and does nothing. MindWave's old name MW_DRY_RUN is not read
+rem since GCY6.1; MindWave's own entry, init-dev.bat, refuses to start when only the old name is set.
 
 if "%~1"=="" (
     echo [init-host] Usage: init-host.bat ^<host server dir^>
@@ -44,7 +45,6 @@ set "RELEASE_ASSET_DOWNLOAD=%COMMON_WIN_DIR%\release_asset_download.bat"
 set "NEIGHBOUR_BUN="
 
 set "DRY_RUN=%HK_DRY_RUN%"
-if not defined DRY_RUN set "DRY_RUN=%MW_DRY_RUN%"
 if /I "%DRY_RUN%"=="1" (
     echo HOST_DIR=%HOST_DIR%
     echo HOST_SERVER_DIR=%HOST_SERVER_DIR%

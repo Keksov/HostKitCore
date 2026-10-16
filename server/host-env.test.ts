@@ -1,10 +1,11 @@
-// GCY4.4 (GCY-D38): чтение окружения хоста — новое имя первым, старое запасным со строкой о нём.
-// Замки держат то, на что опираются серверы хостов (MindWave — с запасными `MW_*`, Gnauralcity — без них)
-// и разбор настройки сервера по исходнику (T-42), который считает значение этой же функцией.
+// GCY-D38: чтение окружения хоста — только под нейтральным именем `HK_*`; прежние `MW_*` сняты в GCY6.1 и не
+// читаются, а заданное снятое имя хост объявляет одной строкой. Замки держат то, на что опираются серверы
+// хостов, песочница uitest и разбор настройки сервера по исходнику (T-42), который считает значение этой же
+// функцией.
 
 import { describe, expect, test } from "bun:test"
 
-import { readHostEnv } from "./host-env"
+import { noticeRetiredHostEnv, readHostEnv } from "./host-env"
 
 const collect = (): { lines: string[]; warn: (aLine: string) => void } => {
   const lines: string[] = []
@@ -12,44 +13,29 @@ const collect = (): { lines: string[]; warn: (aLine: string) => void } => {
 }
 
 describe("readHostEnv", () => {
-  test("новое имя задано — его значение, обрезанное; запасное не читается и строки нет", () => {
-    const sink = collect()
-    const env = { HK_RUNTIME_DIR: "  C:\\rt  ", MW_RUNTIME_DIR: "C:\\old" }
-    expect(readHostEnv("HK_RUNTIME_DIR", { fallback: "MW_RUNTIME_DIR", env, warn: sink.warn })).toBe("C:\\rt")
-    expect(sink.lines).toEqual([])
+  test("заданное имя — его значение, обрезанное", () => {
+    expect(readHostEnv("HK_RUNTIME_DIR", { env: { HK_RUNTIME_DIR: "  C:\\rt  " } })).toBe("C:\\rt")
   })
 
-  test("нового нет — запасное имя и ровно одна строка о нём (по ней фаза 6 найдёт, кто ещё на старых)", () => {
-    const sink = collect()
-    expect(readHostEnv("HK_WRITE_FENCE", { fallback: "MW_WRITE_FENCE", env: { MW_WRITE_FENCE: "C:\\f" }, warn: sink.warn }))
-      .toBe("C:\\f")
-    expect(sink.lines).toHaveLength(1)
-    expect(sink.lines[0]).toContain("HK_WRITE_FENCE")
-    expect(sink.lines[0]).toContain("MW_WRITE_FENCE")
-    expect(sink.lines[0]).toStartWith("[host-env] ")
+  // Как `?.trim() ||` серверов до GCY4.4: пустое значение — отсутствие.
+  test("пустая строка и одни пробелы — как отсутствие", () => {
+    expect(readHostEnv("HK_DEV", { env: { HK_DEV: "" } })).toBeUndefined()
+    expect(readHostEnv("HK_DEV", { env: { HK_DEV: "   " } })).toBeUndefined()
+    expect(readHostEnv("HK_DEV", { env: {} })).toBeUndefined()
   })
 
-  // Как `?.trim() ||` до GCY4.4: пустое значение — отсутствие, и пустое НОВОЕ не заслоняет заданное старое.
-  test("пустая строка и одни пробелы — как отсутствие, у нового и у запасного", () => {
-    const sink = collect()
-    expect(readHostEnv("HK_DEV", { fallback: "MW_DEV", env: { HK_DEV: "", MW_DEV: "1" }, warn: sink.warn })).toBe("1")
-    expect(sink.lines).toHaveLength(1)
-    expect(readHostEnv("HK_DEV", { fallback: "MW_DEV", env: { HK_DEV: "   ", MW_DEV: " " }, warn: sink.warn })).toBeUndefined()
-    expect(readHostEnv("HK_DEV", { env: { HK_DEV: "" }, warn: sink.warn })).toBeUndefined()
-    expect(sink.lines).toHaveLength(1)
+  // GCY6.1: запасные имена сняты — старое не читается, даже когда нового нет.
+  test("прежнее имя MW_* не читается", () => {
+    expect(readHostEnv("HK_RUNTIME_DIR", { env: { MW_RUNTIME_DIR: "C:\\old" } })).toBeUndefined()
+    expect(readHostEnv("HK_IDLE_TIMEOUT_SEC", { env: { MW_IDLE_TIMEOUT_SEC: "200" } })).toBeUndefined()
+    expect(readHostEnv("HK_DEV", { env: { HK_DEV: "1", MW_DEV: "0" } })).toBe("1")
   })
 
-  test("не задано ни одно — undefined и без строки", () => {
-    const sink = collect()
-    expect(readHostEnv("HK_IDLE_TIMEOUT_SEC", { fallback: "MW_IDLE_TIMEOUT_SEC", env: {}, warn: sink.warn })).toBeUndefined()
-    expect(sink.lines).toEqual([])
-  })
-
-  // Gnauralcity: наследия нет — старое имя не читается, даже если стоит в окружении.
-  test("без запасного имени старое не читается", () => {
-    const sink = collect()
-    expect(readHostEnv("HK_RUNTIME_DIR", { env: { MW_RUNTIME_DIR: "C:\\old" }, warn: sink.warn })).toBeUndefined()
-    expect(sink.lines).toEqual([])
+  // Опцию, которую функция больше не исполняет, она не проглатывает: вызов, рассчитывающий на старое имя,
+  // иначе тихо получил бы умолчание.
+  test("опция fallback — отказ", () => {
+    const options = { fallback: "MW_DEV", env: { MW_DEV: "1" } } as unknown as Parameters<typeof readHostEnv>[1]
+    expect(() => readHostEnv("HK_DEV", options)).toThrow(/запасных имён больше нет/)
   })
 
   test("по умолчанию читает окружение процесса", () => {
@@ -66,10 +52,43 @@ describe("readHostEnv", () => {
     }
   })
 
-  test("имя без префикса HK_ и запасное, не являющееся старым, — отказ", () => {
+  test("имя без префикса HK_ — отказ", () => {
     expect(() => readHostEnv("MW_RUNTIME_DIR")).toThrow(/HK_/)
     expect(() => readHostEnv("HK_")).toThrow(/HK_/)
-    expect(() => readHostEnv("HK_DEV", { fallback: "HK_DEV" })).toThrow(/запасное/)
-    expect(() => readHostEnv("HK_DEV", { fallback: "HK_DEV_OLD" })).toThrow(/запасное/)
+  })
+})
+
+describe("noticeRetiredHostEnv", () => {
+  const RETIRED = { MW_RUNTIME_DIR: "HK_RUNTIME_DIR", MW_DEV: "HK_DEV" }
+
+  test("заданное снятое имя — ровно одна строка с обоими именами; значение ни на что не влияет", () => {
+    const sink = collect()
+    const env = { MW_DEV: "1" }
+    expect(noticeRetiredHostEnv(RETIRED, { env, warn: sink.warn })).toEqual(["MW_DEV"])
+    expect(sink.lines).toEqual(["[host-env] MW_DEV задана, но больше не читается — используйте HK_DEV (GCY-D38)"])
+    expect(readHostEnv("HK_DEV", { env })).toBeUndefined()
+  })
+
+  test("строка — на каждое заданное, и при заданном новом тоже (старое всё равно не действует)", () => {
+    const sink = collect()
+    const env = { MW_RUNTIME_DIR: "C:\\old", HK_RUNTIME_DIR: "C:\\rt", MW_DEV: "1" }
+    expect(noticeRetiredHostEnv(RETIRED, { env, warn: sink.warn })).toEqual(["MW_RUNTIME_DIR", "MW_DEV"])
+    expect(sink.lines).toHaveLength(2)
+    expect(sink.lines[0]).toContain("MW_RUNTIME_DIR")
+    expect(sink.lines[0]).toContain("HK_RUNTIME_DIR")
+    expect(readHostEnv("HK_RUNTIME_DIR", { env })).toBe("C:\\rt")
+  })
+
+  test("не задано или пусто — без строки", () => {
+    const sink = collect()
+    expect(noticeRetiredHostEnv(RETIRED, { env: { MW_DEV: "  ", MW_RUNTIME_DIR: "" }, warn: sink.warn })).toEqual([])
+    expect(noticeRetiredHostEnv(RETIRED, { env: {}, warn: sink.warn })).toEqual([])
+    expect(sink.lines).toEqual([])
+  })
+
+  test("новое имя без префикса HK_ или старое, не являющееся старым, — отказ", () => {
+    expect(() => noticeRetiredHostEnv({ MW_DEV: "DEV" }, { env: {} })).toThrow(/HK_/)
+    expect(() => noticeRetiredHostEnv({ HK_DEV: "HK_DEV" }, { env: {} })).toThrow(/не снятое/)
+    expect(() => noticeRetiredHostEnv({ HK_DEV_OLD: "HK_DEV" }, { env: {} })).toThrow(/не снятое/)
   })
 })
